@@ -48,6 +48,18 @@ const statusColor = computed(() => {
     </div>
     <div class="flex items-center gap-3 pointer-events-auto">
       <ThemeToggle />
+      <button
+        v-if="false"
+        class="btn-touch !px-3 gap-1.5 text-sm"
+        :class="theme.isSimulating
+          ? 'text-accent border border-accent/50 animate-pulse'
+          : 'text-fg-muted'"
+        :title="theme.isSimulating ? 'Stop day-cycle demo' : 'Demo: simulate 24 h in 72 s'"
+        @click="theme.isSimulating ? theme.stopDaySimulation() : theme.startDaySimulation()"
+      >
+        <Icon :icon="theme.isSimulating ? 'mdi:stop-circle-outline' : 'mdi:play-circle-outline'" width="18" height="18" />
+        <span class="hidden md:inline">{{ theme.isSimulating ? 'Stop' : 'Demo' }}</span>
+      </button>
       <SaveViewButton />
       <button
         class="btn-touch !px-3 gap-2 text-sm"

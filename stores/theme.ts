@@ -76,6 +76,7 @@ const FALLBACK_LON = 5
 let _lat = FALLBACK_LAT
 let _lon = FALLBACK_LON
 let _cycleTimer: ReturnType<typeof setInterval> | null = null
+let _simTimer:   ReturnType<typeof setInterval> | null = null
 // Small hysteresis to avoid rapid toggling right at the horizon
 const ELEVATION_HYSTERESIS = 0.5 // degrees
 
@@ -112,6 +113,39 @@ function sunElevation(date: Date, lat: number, lon: number): number {
   return Math.asin(Math.max(-1, Math.min(1, sinEl))) * (180 / Math.PI)
 }
 
+// ── Brightness / interpolation helpers ───────────────────────────────────────
+
+/**
+ * Continuous brightness for a given hour-of-day (0–24).
+ *   h=0  (midnight) → 0   (full dark)
+ *   h=12 (noon)     → 1   (full light)
+ *   h=6  (dawn/dusk)→ 0.5 (midpoint)
+ */
+function brightnessFromHour(h: number): number {
+  return (Math.cos(Math.PI * (h / 12 - 1)) + 1) / 2
+}
+
+function timeBrightness(date: Date): number {
+  return brightnessFromHour(date.getHours() + date.getMinutes() / 60 + date.getSeconds() / 3600)
+}
+
+/** Linear interpolation of two space-separated RGB triplet strings (e.g. "30 41 59"). */
+function lerpRgbTriplet(dark: string, light: string, t: number): string {
+  const [dr, dg, db] = dark.split(' ').map(Number)
+  const [lr, lg, lb] = light.split(' ').map(Number)
+  return `${Math.round(dr + (lr - dr) * t)} ${Math.round(dg + (lg - dg) * t)} ${Math.round(db + (lb - db) * t)}`
+}
+
+/** Linear interpolation of two CSS hex colour strings (e.g. "#1e293b"). */
+function lerpHex(dark: string, light: string, t: number): string {
+  const dr = parseInt(dark.slice(1, 3), 16), dg = parseInt(dark.slice(3, 5), 16), db = parseInt(dark.slice(5, 7), 16)
+  const lr = parseInt(light.slice(1, 3), 16), lg = parseInt(light.slice(3, 5), 16), lb = parseInt(light.slice(5, 7), 16)
+  const r = Math.round(dr + (lr - dr) * t)
+  const g = Math.round(dg + (lg - dg) * t)
+  const b = Math.round(db + (lb - db) * t)
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type WallOpacityMode = 'solid' | 'dimmed' | 'ghost'
@@ -135,6 +169,10 @@ export const useThemeStore = defineStore('theme', {
     accentHue: DEFAULT_ACCENT_HUE,
     /** Last persisted accent hue — used to detect unsaved changes. */
     accentHueSaved: DEFAULT_ACCENT_HUE,
+    /** Continuous brightness in auto mode: 0 = midnight (full dark), 1 = noon (full light). */
+    brightness: 0,
+    /** True while the 72-second day-cycle demo is running. */
+    isSimulating: false,
   }),
   getters: {
     wallOpacity: (state): number => WALL_OPACITY_VALUES[state.wallOpacityMode],
@@ -194,7 +232,11 @@ export const useThemeStore = defineStore('theme', {
     /** Preview accent hue live (updates CSS vars) without persisting. */
     setAccentHue(hue: number) {
       this.accentHue = hue
-      this._applyAccentVars(this.isDark)
+      if (this.mode === 'auto') {
+        this._applyBrightness(this.brightness)
+      } else {
+        this._applyAccentVars(this.isDark)
+      }
     },
 
     /** Persist the current accent hue to localStorage. */
@@ -219,6 +261,67 @@ export const useThemeStore = defineStore('theme', {
       }
     },
 
+    /**
+     * Interpolate all theme CSS variables for auto mode.
+     * t=0 → full dark (midnight), t=1 → full light (noon).
+     * The existing 0.35s CSS transitions on elements provide per-minute smoothing.
+     */
+    _applyBrightness(t: number) {
+      if (typeof document === 'undefined') return
+      this.brightness = t
+      const root = document.documentElement
+
+      // Remove binary dark/light classes — inline vars take over
+      root.classList.remove('dark', 'light')
+
+      // RGB triplet vars
+      const triplets: [string, string, string][] = [
+        ['--bg',          '30 41 59',    '248 245 238'],
+        ['--bg-panel',    '51 65 85',    '243 238 226'],
+        ['--bg-elevated', '71 85 105',   '229 222 207'],
+        ['--fg',          '226 232 240', '41 37 36'],
+        ['--fg-muted',    '148 163 184', '120 113 108'],
+      ]
+      for (const [prop, dark, light] of triplets) {
+        root.style.setProperty(prop, lerpRgbTriplet(dark, light, t))
+      }
+
+      // Hex scene colour vars (stored as quoted strings in CSS)
+      const hexVars: [string, string, string][] = [
+        ['--scene-clear',     '#1e293b', '#efe8d8'],
+        ['--scene-floor',     '#334155', '#e6dec7'],
+        ['--scene-wall',      '#475569', '#c7bba0'],
+        ['--scene-furniture', '#64748b', '#a8987a'],
+      ]
+      for (const [prop, dark, light] of hexVars) {
+        root.style.setProperty(prop, `"${lerpHex(dark, light, t)}"`)
+      }
+
+      // Numeric scene vars (quoted strings)
+      root.style.setProperty('--scene-ambient', `"${(0.45 + (0.7  - 0.45) * t).toFixed(3)}"`)
+      root.style.setProperty('--scene-sun',     `"${(1.1  + (0.9  - 1.1)  * t).toFixed(3)}"`)
+
+      // Accent — interpolate saturation and lightness between dark and light values
+      const h = this.accentHue
+      const s    = 78  + (70  - 78)  * t
+      const l    = 62  + (42  - 62)  * t
+      const lDim = 46  + (35  - 46)  * t
+      root.style.setProperty('--accent',     hslToRgbTriplet(h, s, l))
+      root.style.setProperty('--accent-dim', hslToRgbTriplet(h, 72, lDim))
+
+      // Update boolean isDark (used by mode-agnostic callers)
+      this.isDark = t < 0.5
+
+      // Update theme-color meta
+      const meta = document.querySelector('meta[name="theme-color"]')
+      if (meta) {
+        const bg = getComputedStyle(root).getPropertyValue('--bg').trim()
+        if (bg) meta.setAttribute('content', `rgb(${bg})`)
+      }
+
+      this.revision++
+    },
+
     toggle() {
       // Cycle: auto -> light -> dark -> auto
       const next: ThemeMode =
@@ -230,6 +333,38 @@ export const useThemeStore = defineStore('theme', {
       const order: WallOpacityMode[] = ['solid', 'dimmed', 'ghost']
       const idx = order.indexOf(this.wallOpacityMode)
       this.wallOpacityMode = order[(idx + 1) % order.length]
+    },
+
+    /**
+     * Run a 72-second demo that sweeps through a full 24-hour brightness cycle
+     * starting from midnight (full dark) → noon (full light) → midnight again.
+     * Calls stopDaySimulation() automatically when done.
+     */
+    startDaySimulation() {
+      if (this.isSimulating) {
+        this.stopDaySimulation()
+        return
+      }
+      const DURATION = 72_000 // ms for one full 24-hour sweep
+      const start = Date.now()
+      this.isSimulating = true
+      if (_simTimer) clearInterval(_simTimer)
+      _simTimer = setInterval(() => {
+        // Abort if mode was changed to manual while sim was running
+        if (this.mode !== 'auto') { this.stopDaySimulation(); return }
+        const elapsed = Date.now() - start
+        const fraction = Math.min(elapsed / DURATION, 1)
+        // fraction 0→1 maps to hour 0→24 (midnight → midnight via noon)
+        this._applyBrightness(brightnessFromHour(fraction * 24))
+        if (fraction >= 1) this.stopDaySimulation()
+      }, 50) // ~20 fps
+    },
+
+    stopDaySimulation() {
+      if (_simTimer) { clearInterval(_simTimer); _simTimer = null }
+      this.isSimulating = false
+      // Restore current real-time brightness
+      if (this.mode === 'auto') this._applyBrightness(timeBrightness(new Date()))
     },
 
     /** Start sun-cycle mode: request geolocation and set up a per-minute tick. */
@@ -256,10 +391,10 @@ export const useThemeStore = defineStore('theme', {
     },
 
     _stopCycle() {
-      if (_cycleTimer) {
-        clearInterval(_cycleTimer)
-        _cycleTimer = null
-      }
+      if (_cycleTimer) { clearInterval(_cycleTimer); _cycleTimer = null }
+      // Also cancel any running demo simulation
+      if (_simTimer) { clearInterval(_simTimer); _simTimer = null }
+      this.isSimulating = false
     },
 
     /** Apply theme with no transition (used on page load / mode switch). */
@@ -268,7 +403,11 @@ export const useThemeStore = defineStore('theme', {
       const html = document.documentElement
       html.classList.add('no-transition')
       html.offsetHeight // force reflow
-      this._setDark(this._resolveDark())
+      if (this.mode === 'auto') {
+        this._applyBrightness(timeBrightness(new Date()))
+      } else {
+        this._setDark(this._resolveDark())
+      }
       html.offsetHeight // force reflow
       html.classList.remove('no-transition')
     },
@@ -276,7 +415,11 @@ export const useThemeStore = defineStore('theme', {
     /** Apply theme with the normal (or cycle) transition. */
     apply() {
       if (typeof document === 'undefined') return
-      this._setDark(this._resolveDark())
+      if (this.mode === 'auto') {
+        this._applyBrightness(timeBrightness(new Date()))
+      } else {
+        this._setDark(this._resolveDark())
+      }
     },
 
     _resolveDark(): boolean {
@@ -291,6 +434,16 @@ export const useThemeStore = defineStore('theme', {
     _setDark(dark: boolean) {
       if (typeof document === 'undefined') return
       const html = document.documentElement
+
+      // Clear any inline vars left by _applyBrightness so class-based CSS takes over
+      for (const prop of [
+        '--bg', '--bg-panel', '--bg-elevated', '--fg', '--fg-muted',
+        '--accent', '--accent-dim',
+        '--scene-clear', '--scene-floor', '--scene-wall', '--scene-furniture',
+        '--scene-ambient', '--scene-sun',
+      ]) {
+        html.style.removeProperty(prop)
+      }
 
       const apply = () => {
         this.isDark = dark
