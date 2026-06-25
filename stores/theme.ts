@@ -143,16 +143,6 @@ export const useThemeStore = defineStore('theme', {
         )
       }
 
-      // Enable the slow CSS transition for cycle mode (two rAFs to let the
-      // initial instant-apply paint commit first)
-      if (typeof document !== 'undefined') {
-        requestAnimationFrame(() =>
-          requestAnimationFrame(() => {
-            document.documentElement.setAttribute('data-cycle', '')
-          }),
-        )
-      }
-
       if (_cycleTimer) clearInterval(_cycleTimer)
       _cycleTimer = setInterval(() => {
         if (this.mode === 'auto') this.apply()
@@ -163,9 +153,6 @@ export const useThemeStore = defineStore('theme', {
       if (_cycleTimer) {
         clearInterval(_cycleTimer)
         _cycleTimer = null
-      }
-      if (typeof document !== 'undefined') {
-        document.documentElement.removeAttribute('data-cycle')
       }
     },
 
@@ -197,18 +184,32 @@ export const useThemeStore = defineStore('theme', {
 
     _setDark(dark: boolean) {
       if (typeof document === 'undefined') return
-      this.isDark = dark
       const html = document.documentElement
-      html.classList.toggle('dark', dark)
-      html.classList.toggle('light', !dark)
 
-      // Keep theme-color meta in sync
-      const meta = document.querySelector('meta[name="theme-color"]')
-      if (meta) {
-        const bg = getComputedStyle(html).getPropertyValue('--bg').trim()
-        if (bg) meta.setAttribute('content', `rgb(${bg})`)
+      const apply = () => {
+        this.isDark = dark
+        html.classList.toggle('dark', dark)
+        html.classList.toggle('light', !dark)
+
+        // Keep theme-color meta in sync
+        const meta = document.querySelector('meta[name="theme-color"]')
+        if (meta) {
+          const bg = getComputedStyle(html).getPropertyValue('--bg').trim()
+          if (bg) meta.setAttribute('content', `rgb(${bg})`)
+        }
+        this.revision++
       }
-      this.revision++
+
+      // Use View Transitions for a compositor-level cross-fade that bypasses
+      // all CSS cascade issues. Skip for instant (no-transition) applies.
+      if (
+        'startViewTransition' in document &&
+        !html.classList.contains('no-transition')
+      ) {
+        ;(document as any).startViewTransition(apply)
+      } else {
+        apply()
+      }
     },
   },
 })

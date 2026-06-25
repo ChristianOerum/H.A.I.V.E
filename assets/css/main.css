@@ -55,14 +55,34 @@ html.light {
     color: rgb(var(--fg));
     overscroll-behavior: none;
     -webkit-tap-highlight-color: transparent;
-    transition: background-color 0.25s ease, color 0.25s ease;
   }
 
-  /* Sun-cycle mode: colours drift over ~20 minutes, mirroring twilight */
-  html[data-cycle],
-  html[data-cycle] body,
-  html[data-cycle] #__nuxt {
-    transition-duration: 1200s;
+  /* Smooth theme colour transitions on every element so the whole UI
+     morphs together. Only colour-related properties are listed so
+     positional / transform animations are unaffected. */
+  *,
+  *::before,
+  *::after {
+    transition:
+      color          0.35s ease,
+      background-color 0.35s ease,
+      border-color   0.35s ease,
+      fill           0.35s ease,
+      stroke         0.35s ease,
+      box-shadow     0.35s ease;
+  }
+
+  /* View Transitions cross-fade — fires for manual toggle and solar cycle.
+     Duration is set via --theme-fade-ms so the store can control it.
+     pointer-events: none ensures the snapshot overlay never blocks UI input. */
+  ::view-transition {
+    pointer-events: none;
+  }
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: var(--theme-fade-ms, 0.5s);
+    animation-timing-function: ease;
+    pointer-events: none;
   }
 
   /* Suppress all transitions briefly during page-load / instant applies */

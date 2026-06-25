@@ -31,7 +31,7 @@ watch(lightRef, (light) => {
   light.shadow.mapSize.width  = 512
   light.shadow.mapSize.height = 512
   light.shadow.camera.near    = 0.1
-  light.shadow.camera.far     = 18
+  light.shadow.camera.far     = 8
 })
 
 // ── TV spot light — directional emission in furniture facing direction ────────
@@ -60,14 +60,14 @@ watch([tvSpotRef, effectiveLightPos, () => props.lightFacing], () => {
 
 <template>
   <TresGroup :position="effectiveLightPos">
-    <!-- Point light so active lights still illuminate the 3D scene -->
+    <!-- Point light — high decay keeps light contained inside the room walls -->
     <TresPointLight
       v-if="visual.active && entity.entity_id.startsWith('light.')"
       ref="lightRef"
       :color="visual.color"
-      :intensity="visual.intensity * 20"
-      :distance="18"
-      :decay="0.8"
+      :intensity="visual.intensity * 80"
+      :distance="8"
+      :decay="2"
       cast-shadow
     />
     <!-- Directional spot light for TV / media player — emits in furniture facing direction -->
@@ -75,7 +75,7 @@ watch([tvSpotRef, effectiveLightPos, () => props.lightFacing], () => {
       v-if="visual.active && entity.entity_id.startsWith('media_player.') && placement.lightSourceFurnitureId"
       ref="tvSpotRef"
       color="#ffffff"
-      :intensity="visual.intensity * 6"
+      :intensity="visual.intensity * 20"
       :angle="Math.PI / 2.5"
       :penumbra="0.5"
       :distance="8"

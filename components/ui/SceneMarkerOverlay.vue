@@ -5,6 +5,7 @@ import { getAdapter } from '~/utils/deviceRegistry'
 const layout = useLayoutStore()
 const entities = useEntitiesStore()
 const { positions } = useMarkerOverlay()
+const { callService } = useHomeAssistant()
 
 function getIcon(entityId: string): string {
   if (entityId.includes('temperature')) return 'mdi:thermometer'
@@ -75,9 +76,49 @@ function orbStyle(m: MarkerInfo) {
   }
 }
 
-function onTap(entityId: string, e: Event) {
+/** Domains that support the generic `toggle` service call */
+const TOGGLEABLE = new Set(['light', 'switch', 'fan', 'media_player', 'cover', 'input_boolean', 'automation'])
+
+const LONG_PRESS_MS = 300
+const pressTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const longPressTriggered = new Set<string>()
+
+function onPointerDown(entityId: string, e: PointerEvent) {
   e.stopPropagation()
-  layout.select(entityId)
+  longPressTriggered.delete(entityId)
+  const timer = setTimeout(() => {
+    longPressTriggered.add(entityId)
+    layout.select(entityId)
+  }, LONG_PRESS_MS)
+  pressTimers.set(entityId, timer)
+}
+
+function cancelPress(entityId: string) {
+  const timer = pressTimers.get(entityId)
+  if (timer !== undefined) {
+    clearTimeout(timer)
+    pressTimers.delete(entityId)
+  }
+}
+
+function onPointerUp(entityId: string, e: PointerEvent) {
+  e.stopPropagation()
+  const wasLong = longPressTriggered.has(entityId)
+  cancelPress(entityId)
+  longPressTriggered.delete(entityId)
+  if (wasLong) return
+  // Short tap — toggle if possible, otherwise open the control panel
+  const domain = entityId.split('.')[0]
+  if (TOGGLEABLE.has(domain)) {
+    callService(domain, 'toggle', {}, { entity_id: entityId })
+  } else {
+    layout.select(entityId)
+  }
+}
+
+function onPointerCancel(entityId: string) {
+  cancelPress(entityId)
+  longPressTriggered.delete(entityId)
 }
 </script>
 
@@ -90,7 +131,10 @@ function onTap(entityId: string, e: Event) {
       :key="m.entityId"
       class="marker pointer-events-auto"
       :style="{ transform: `translate(${m.x}px, ${m.y}px)` }"
-      @click="onTap(m.entityId, $event)"
+      @pointerdown="onPointerDown(m.entityId, $event)"
+      @pointerup="onPointerUp(m.entityId, $event)"
+      @pointercancel="onPointerCancel(m.entityId)"
+      @pointerleave="onPointerCancel(m.entityId)"
     >
       <div class="orb" :style="orbStyle(m)">
         <Icon :icon="m.icon" width="22" height="22" color="white" />
@@ -115,6 +159,8 @@ function onTap(entityId: string, e: Event) {
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
+  /* Prevent browser scroll/context-menu from interfering with long-press */
+  touch-action: none;
   /* 52px min tap target including padding */
   padding: 4px;
 }
