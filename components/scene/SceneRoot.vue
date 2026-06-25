@@ -1,0 +1,83 @@
+<script setup lang="ts">
+import { TresCanvas } from '@tresjs/core'
+import { OrbitControls } from '@tresjs/cientos'
+
+const layout = useLayoutStore()
+const entities = useEntitiesStore()
+const sceneColors = useSceneColors()
+const fp = useFloorplanStore()
+
+const center = computed<[number, number, number]>(() => [fp.center[0], 0, fp.center[1]])
+const cameraPosition = computed<[number, number, number]>(() => [fp.center[0], 14, fp.center[1] + 12])
+
+const placedEntities = computed(() =>
+  layout.placements
+    .map((p) => ({ placement: p, entity: entities.get(p.entity_id) }))
+    .filter((x): x is { placement: typeof x.placement; entity: NonNullable<typeof x.entity> } => !!x.entity),
+)
+
+/** Resolve a furniture item's world-space position (top surface) given its ID. */
+function furnitureWorldTop(furnitureId: string): [number, number, number] | undefined {
+  const item = fp.furniture.find((f) => f.id === furnitureId)
+  if (!item) return undefined
+  if (item.groupId) {
+    const group = fp.furnitureGroups.find((g) => g.id === item.groupId)
+    if (group) {
+      const rad = (group.rotY * Math.PI) / 180
+      const rx = item.x * Math.cos(rad) - item.z * Math.sin(rad)
+      const rz = item.x * Math.sin(rad) + item.z * Math.cos(rad)
+      return [group.x + rx, group.y + item.y + item.h / 2 + 0.15, group.z + rz]
+    }
+  }
+  return [item.x, item.y + item.h / 2 + 0.15, item.z]
+}
+/** World-space Y-rotation (degrees) of a furniture item, accounting for group. */
+function furnitureLightFacing(furnitureId: string): number {
+  const item = fp.furniture.find((f) => f.id === furnitureId)
+  if (!item) return 0
+  const itemRot = item.rotY ?? 0
+  if (item.groupId) {
+    const group = fp.furnitureGroups.find((g) => g.id === item.groupId)
+    if (group) return itemRot + (group.rotY ?? 0)
+  }
+  return itemRot
+}
+</script>
+
+<template>
+  <TresCanvas
+    :clear-color="sceneColors.clear"
+    window-size
+    shadows
+    :dpr="[1, 2]"
+  >
+    <TresPerspectiveCamera :position="cameraPosition" :look-at="center" :fov="45" />
+
+    <OrbitControls
+      :target="center"
+      :enable-pan="false"
+      :enable-damping="true"
+      :damping-factor="0.08"
+      :min-distance="8"
+      :max-distance="28"
+      :min-polar-angle="0.2"
+      :max-polar-angle="Math.PI / 2.2"
+    />
+
+    <TresAmbientLight :intensity="sceneColors.ambient" />
+    <TresDirectionalLight :position="[8, 14, 8]" :intensity="sceneColors.sun" cast-shadow />
+
+    <SceneFloorplan />
+
+    <SceneProjector />
+
+    <SceneDeviceMarker
+      v-for="item in placedEntities"
+      :key="item.placement.entity_id"
+      :entity="item.entity"
+      :placement="item.placement"
+      :light-position="item.placement.lightSourceFurnitureId ? furnitureWorldTop(item.placement.lightSourceFurnitureId) : undefined"
+      :light-facing="item.placement.lightSourceFurnitureId ? furnitureLightFacing(item.placement.lightSourceFurnitureId) : undefined"
+    />
+  </TresCanvas>
+</template>

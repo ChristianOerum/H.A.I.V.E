@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---- Theme tokens (RGB triplets so Tailwind's <alpha-value> works) ----
+ *
+ * Light: subtly warm/beige paper — not pure white.
+ * Dark : slate (cool blue-gray), not near-black.
+ *
+ * Scene colors are also CSS vars so the 3D scene can read them via
+ * getComputedStyle and stay in sync with the UI.
+ */
+:root {
+  /* Default = dark (slate). html.light overrides below. */
+  --bg:           30 41 59;     /* slate-800 */
+  --bg-panel:     51 65 85;     /* slate-700 */
+  --bg-elevated:  71 85 105;    /* slate-600 */
+  --fg:           226 232 240;  /* slate-200 */
+  --fg-muted:     148 163 184;  /* slate-400 */
+  --accent:       94 234 212;   /* teal-300 */
+  --accent-dim:   20 184 166;   /* teal-500 */
+
+  --scene-clear:    "#1e293b";  /* matches --bg */
+  --scene-floor:    "#334155";
+  --scene-wall:     "#475569";
+  --scene-furniture:"#64748b";
+  --scene-ambient:  "0.45";
+  --scene-sun:      "1.1";
+}
+
+html.light {
+  /* Light: very faintly beige */
+  --bg:           248 245 238; /* warm off-white */
+  --bg-panel:     243 238 226; /* slightly more beige card */
+  --bg-elevated:  229 222 207; /* button/divider */
+  --fg:           41 37 36;    /* stone-800 */
+  --fg-muted:     120 113 108; /* stone-500 */
+  --accent:       13 148 136;  /* teal-600 (more contrast on light) */
+  --accent-dim:   15 118 110;  /* teal-700 */
+
+  --scene-clear:    "#efe8d8";
+  --scene-floor:    "#e6dec7";
+  --scene-wall:     "#c7bba0";
+  --scene-furniture:"#a8987a";
+  --scene-ambient:  "0.7";
+  --scene-sun:      "0.9";
+}
+
+@layer base {
+  html, body, #__nuxt {
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    background: rgb(var(--bg));
+    color: rgb(var(--fg));
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+
+  /* Sun-cycle mode: colours drift over ~20 minutes, mirroring twilight */
+  html[data-cycle],
+  html[data-cycle] body,
+  html[data-cycle] #__nuxt {
+    transition-duration: 1200s;
+  }
+
+  /* Suppress all transitions briefly during page-load / instant applies */
+  .no-transition,
+  .no-transition * {
+    transition: none !important;
+  }
+
+  /* Kiosk: disable selection, drag, context menu visuals */
+  * {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  /* Hide cursor on the kiosk surface */
+  body.kiosk, body.kiosk * {
+    cursor: none !important;
+  }
+}
+
+@layer components {
+  .btn-touch {
+    @apply min-h-touch min-w-touch flex items-center justify-center px-4 py-2 rounded-xl bg-bg-elevated text-fg active:bg-accent-dim active:text-white transition-colors;
+  }
+}

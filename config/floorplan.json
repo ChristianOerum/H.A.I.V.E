@@ -1,0 +1,357 @@
+{
+  "rooms": [
+    {
+      "id": "r1",
+      "name": "Living Room",
+      "vertices": [
+        [
+          0,
+          -5
+        ],
+        [
+          5.25,
+          -2.75
+        ],
+        [
+          2.5,
+          3
+        ],
+        [
+          0,
+          3
+        ]
+      ],
+      "tintH": 35,
+      "tintV": 1,
+      "wallH": 2,
+      "color": "#610000"
+    },
+    {
+      "id": "r2",
+      "name": "Bedroom",
+      "vertices": [
+        [
+          -8,
+          -5
+        ],
+        [
+          0,
+          -5
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          -8,
+          0
+        ]
+      ],
+      "tintH": -25,
+      "tintV": 0.95,
+      "wallH": 2
+    },
+    {
+      "id": "r3",
+      "name": "Bathroom",
+      "vertices": [
+        [
+          -8,
+          0
+        ],
+        [
+          -4,
+          0
+        ],
+        [
+          -4,
+          3
+        ],
+        [
+          -8,
+          3
+        ]
+      ],
+      "tintH": 20,
+      "tintV": 1.05,
+      "wallH": 2
+    },
+    {
+      "id": "r5",
+      "name": "Kitchen",
+      "vertices": [
+        [
+          -8,
+          3
+        ],
+        [
+          0,
+          3
+        ],
+        [
+          0,
+          5
+        ],
+        [
+          -8,
+          5
+        ]
+      ],
+      "tintH": 35,
+      "tintV": 1.1,
+      "wallH": 2
+    },
+    {
+      "id": "e80fa4f7-3a46-44f7-903c-eff7d6c995f5",
+      "name": "New Room",
+      "vertices": [
+        [
+          -4,
+          0
+        ],
+        [
+          -4,
+          3
+        ],
+        [
+          0,
+          3
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "tintH": 0,
+      "tintV": 1,
+      "wallH": 2
+    }
+  ],
+  "openings": [
+    {
+      "id": "op4",
+      "type": "window",
+      "roomId": "r1",
+      "edgeIdx": 0,
+      "t": 0.5,
+      "width": 1.4
+    },
+    {
+      "id": "be05a57a-fb72-460f-86a2-eccf1df0c415",
+      "type": "window",
+      "roomId": "r2",
+      "edgeIdx": 3,
+      "t": 0.7364426982943083,
+      "width": 1.2
+    },
+    {
+      "id": "abda53a6-cd31-4925-aea7-ea7b9a6e1837",
+      "type": "door",
+      "roomId": "r1",
+      "edgeIdx": 3,
+      "t": 0.2066819816827774,
+      "width": 1.2,
+      "height": 1.8
+    },
+    {
+      "id": "30c070dc-ac75-4d8a-bce3-b4309014cae3",
+      "type": "door",
+      "roomId": "r2",
+      "edgeIdx": 2,
+      "t": 0.2504827380180359,
+      "width": 0.9
+    },
+    {
+      "id": "f64d0875-07c8-492e-b847-404d51073524",
+      "type": "door",
+      "roomId": "r3",
+      "edgeIdx": 1,
+      "t": 0.5441638231277466,
+      "width": 0.9
+    },
+    {
+      "id": "847e3a34-3c41-49ad-b0fe-1d18cf740ad6",
+      "type": "door",
+      "roomId": "r1",
+      "edgeIdx": 3,
+      "t": 0.7445940971374512,
+      "width": 0.9
+    }
+  ],
+  "furniture": [
+    {
+      "id": "f2",
+      "label": "Bookshelf",
+      "x": 0.25,
+      "y": 0.2,
+      "z": -0.75,
+      "w": 0.35,
+      "h": 0.4,
+      "d": 2.35,
+      "tintH": 0,
+      "tintV": 0.55,
+      "radius": 0.06,
+      "radiusY": 0.01
+    },
+    {
+      "id": "f4",
+      "label": "Bed",
+      "x": -5.5,
+      "y": 0.3,
+      "z": -3,
+      "w": 3.5,
+      "h": 0.6,
+      "d": 2,
+      "tintH": -30,
+      "tintV": 0.95
+    },
+    {
+      "id": "f5",
+      "label": "Nightstand",
+      "x": -7.5,
+      "y": 0.3,
+      "z": -1.6,
+      "w": 0.7,
+      "h": 0.6,
+      "d": 0.7,
+      "tintH": -30,
+      "tintV": 0.8
+    },
+    {
+      "id": "f6",
+      "label": "Kitchen Counter",
+      "x": -4,
+      "y": 0.45,
+      "z": 4.5,
+      "w": 7,
+      "h": 0.9,
+      "d": 0.7,
+      "tintH": 35,
+      "tintV": 0.7
+    },
+    {
+      "id": "f7",
+      "label": "Kitchen Island",
+      "x": -4,
+      "y": 0.45,
+      "z": 3.5,
+      "w": 3,
+      "h": 0.9,
+      "d": 0.6,
+      "tintH": 35,
+      "tintV": 0.8
+    },
+    {
+      "id": "f8",
+      "label": "Bath",
+      "x": -6.8,
+      "y": 0.25,
+      "z": 1.5,
+      "w": 2.2,
+      "h": 0.5,
+      "d": 1.2,
+      "tintH": 20,
+      "tintV": 1
+    },
+    {
+      "id": "de814970-26e7-4483-9ac4-726e7da18a6a",
+      "label": "Frame",
+      "x": 0,
+      "y": 1,
+      "z": 0,
+      "w": 0.05,
+      "h": 0.8,
+      "d": 1.35,
+      "tintH": 0,
+      "tintV": 0.9,
+      "rotY": 0,
+      "color": "#1f1f1f",
+      "groupId": "497699ba-d35b-4997-b630-6c6382c8242a"
+    },
+    {
+      "id": "45406b06-1470-4e91-befd-365576c0a32c",
+      "label": "Ceiling lamp",
+      "x": -4,
+      "y": 2,
+      "z": -2.75,
+      "w": 0.4,
+      "h": 0.05,
+      "d": 0.4,
+      "tintH": 0,
+      "tintV": 0.9,
+      "rotY": 0,
+      "radius": 0.2,
+      "radiusY": 0.01,
+      "color": "#ffffff"
+    },
+    {
+      "id": "a8ce0cb0-4dd7-4770-b714-b425d1f7ce6d",
+      "label": "Lamp neck",
+      "x": 0,
+      "y": 0.4,
+      "z": 0,
+      "w": 0.05,
+      "h": 0.3,
+      "d": 0.05,
+      "tintH": 0,
+      "tintV": 0.9,
+      "rotY": 0,
+      "groupId": "901fd975-c823-4414-850e-27fd6e5ac0e5",
+      "radius": 0.025,
+      "radiusY": 0,
+      "color": "#363636"
+    },
+    {
+      "id": "28ff70ee-8a67-4d5b-b0f0-989926d8b32b",
+      "label": "Lamp head",
+      "x": 0,
+      "y": 0.15,
+      "z": 0,
+      "w": 0.5,
+      "h": 0.3,
+      "d": 0.5,
+      "tintH": 0,
+      "tintV": 0.9,
+      "rotY": 0,
+      "groupId": "901fd975-c823-4414-850e-27fd6e5ac0e5",
+      "radius": 0.25,
+      "radiusY": 0.11,
+      "color": "#dedede"
+    },
+    {
+      "id": "47bcc445-873c-47e9-9850-cd4bb4cdf261",
+      "label": "TV backlight",
+      "x": 0.02,
+      "y": 1.01,
+      "z": 0,
+      "w": 1.25,
+      "h": 0.7,
+      "d": 0.03,
+      "tintH": 0,
+      "tintV": 0.9,
+      "rotY": 270,
+      "groupId": "497699ba-d35b-4997-b630-6c6382c8242a",
+      "color": "#212121"
+    }
+  ],
+  "furnitureGroups": [
+    {
+      "id": "901fd975-c823-4414-850e-27fd6e5ac0e5",
+      "label": "Lamp",
+      "collapsed": true,
+      "x": 1.5,
+      "y": 1.5,
+      "z": -0.25,
+      "rotY": 0
+    },
+    {
+      "id": "497699ba-d35b-4997-b630-6c6382c8242a",
+      "label": "TV",
+      "collapsed": false,
+      "x": 0.1,
+      "y": 0,
+      "z": -0.5,
+      "rotY": 0
+    }
+  ]
+}

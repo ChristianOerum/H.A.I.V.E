@@ -1,0 +1,116 @@
+{
+  "placements": [
+    {
+      "entity_id": "light.living_room",
+      "position": [
+        1.5,
+        1.5,
+        -0.2
+      ],
+      "label": "Living Room Light",
+      "lightSourceFurnitureId": "28ff70ee-8a67-4d5b-b0f0-989926d8b32b"
+    },
+    {
+      "entity_id": "light.kitchen",
+      "position": [
+        -4,
+        1.4,
+        4
+      ],
+      "label": "Kitchen Light"
+    },
+    {
+      "entity_id": "light.bedroom",
+      "position": [
+        -4,
+        1.8,
+        -2.75
+      ],
+      "label": "Bedroom Light",
+      "lightSourceFurnitureId": "45406b06-1470-4e91-befd-365576c0a32c"
+    },
+    {
+      "entity_id": "light.bathroom",
+      "position": [
+        -6,
+        1.4,
+        1.5
+      ],
+      "label": "Bathroom Light"
+    },
+    {
+      "entity_id": "light.hallway",
+      "position": [
+        -2,
+        1.4,
+        1.5
+      ],
+      "label": "Hallway Light"
+    },
+    {
+      "entity_id": "switch.tv",
+      "position": [
+        0.1,
+        1,
+        -0.2
+      ],
+      "label": "TV"
+    },
+    {
+      "entity_id": "switch.coffee_maker",
+      "position": [
+        -1.5,
+        1,
+        4.5
+      ],
+      "label": "Coffee Maker"
+    },
+    {
+      "entity_id": "switch.desk_lamp",
+      "position": [
+        -7.5,
+        0.9,
+        -1.6
+      ],
+      "label": "Desk Lamp"
+    },
+    {
+      "entity_id": "sensor.bedroom_humidity",
+      "position": [
+        -7,
+        0.6,
+        -4
+      ],
+      "label": "BR Humidity"
+    },
+    {
+      "entity_id": "media_player.living_room",
+      "position": [
+        0.1,
+        1,
+        -0.8
+      ],
+      "label": "Media",
+      "lightSourceFurnitureId": "47bcc445-873c-47e9-9850-cd4bb4cdf261",
+      "color": "#c91313"
+    },
+    {
+      "entity_id": "cover.bedroom_blinds",
+      "position": [
+        -5,
+        0.6,
+        -4.7
+      ],
+      "label": "Blinds"
+    },
+    {
+      "entity_id": "camera.front_door",
+      "position": [
+        4.2,
+        1.5,
+        -2.3
+      ],
+      "label": "Front Door Cam"
+    }
+  ]
+}

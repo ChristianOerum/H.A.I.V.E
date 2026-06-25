@@ -1,0 +1,28 @@
+[Unit]
+Description=HAIVE Chromium kiosk
+After=graphical.target covehome.service
+Wants=covehome.service
+
+[Service]
+Type=simple
+User=pi
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/pi/.Xauthority
+ExecStartPre=/usr/bin/xset s off
+ExecStartPre=/usr/bin/xset -dpms
+ExecStartPre=/usr/bin/xset s noblank
+ExecStart=/usr/bin/chromium-browser \
+  --kiosk \
+  --noerrdialogs \
+  --disable-infobars \
+  --disable-pinch \
+  --overscroll-history-navigation=0 \
+  --no-first-run \
+  --autoplay-policy=no-user-gesture-required \
+  --enable-features=OverlayScrollbar \
+  http://localhost:3000/?kiosk=1
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=graphical.target
