@@ -4,6 +4,69 @@ export type ThemeMode = 'light' | 'dark' | 'auto'
 
 const STORAGE_KEY = 'cove.theme'
 const COORD_KEY = 'cove.coords'
+const ACCENT_KEY = 'cove.accentHue'
+
+// Default teal hue (≈174°)
+const DEFAULT_ACCENT_HUE = 174
+
+// ── Colour helpers ────────────────────────────────────────────────────────────
+
+/** Convert HSL (0-360, 0-100, 0-100) to a CSS RGB triplet string "R G B". */
+function hslToRgbTriplet(h: number, s: number, l: number): string {
+  h /= 360; s /= 100; l /= 100
+  let r: number, g: number, b: number
+  if (s === 0) {
+    r = g = b = l
+  } else {
+    const hue2rgb = (p: number, q: number, t: number) => {
+      if (t < 0) t += 1
+      if (t > 1) t -= 1
+      if (t < 1 / 6) return p + (q - p) * 6 * t
+      if (t < 1 / 2) return q
+      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6
+      return p
+    }
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s
+    const p = 2 * l - q
+    r = hue2rgb(p, q, h + 1 / 3)
+    g = hue2rgb(p, q, h)
+    b = hue2rgb(p, q, h - 1 / 3)
+  }
+  return `${Math.round(r * 255)} ${Math.round(g * 255)} ${Math.round(b * 255)}`
+}
+
+/** Extract the hue (0-360) from a CSS hex color string. */
+export function hexToHue(hex: string): number {
+  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return DEFAULT_ACCENT_HUE
+  const r = parseInt(hex.slice(1, 3), 16) / 255
+  const g = parseInt(hex.slice(3, 5), 16) / 255
+  const b = parseInt(hex.slice(5, 7), 16) / 255
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  const d = max - min
+  if (d === 0) return 0
+  let h = 0
+  if (max === r)      h = ((g - b) / d + (g < b ? 6 : 0)) / 6
+  else if (max === g) h = ((b - r) / d + 2) / 6
+  else                h = ((r - g) / d + 4) / 6
+  return Math.round(h * 360)
+}
+
+/** Convert a hue to the hex color used as the dark-mode accent swatch. */
+export function hueToHex(hue: number): string {
+  const [r, g, b] = hslToRgbTriplet(hue, 78, 62)
+    .split(' ')
+    .map(Number)
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
+}
+
+/** Convert a hue to the hex color used as the light-mode accent swatch. */
+export function hueToHexLight(hue: number): string {
+  const [r, g, b] = hslToRgbTriplet(hue, 70, 42)
+    .split(' ')
+    .map(Number)
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
+}
 
 // Fallback coordinates (used until geolocation resolves)
 const FALLBACK_LAT = 52
@@ -68,9 +131,14 @@ export const useThemeStore = defineStore('theme', {
     revision: 0,
     /** Controls wall transparency to reveal furniture. */
     wallOpacityMode: 'solid' as WallOpacityMode,
+    /** Accent hue (0–360). Applied as appropriate HSL tones for dark/light. */
+    accentHue: DEFAULT_ACCENT_HUE,
+    /** Last persisted accent hue — used to detect unsaved changes. */
+    accentHueSaved: DEFAULT_ACCENT_HUE,
   }),
   getters: {
     wallOpacity: (state): number => WALL_OPACITY_VALUES[state.wallOpacityMode],
+    accentDirty: (state): boolean => state.accentHue !== state.accentHueSaved,
   },
   actions: {
     init() {
@@ -87,6 +155,16 @@ export const useThemeStore = defineStore('theme', {
           _lat = lat
           _lon = lon
         } catch { /* ignore */ }
+      }
+
+      // Restore accent hue
+      const savedHue = localStorage.getItem(ACCENT_KEY)
+      if (savedHue !== null) {
+        const hue = parseInt(savedHue, 10)
+        if (!isNaN(hue)) {
+          this.accentHue = hue
+          this.accentHueSaved = hue
+        }
       }
 
       // Apply immediately with no transition so the page starts in the right state
@@ -110,6 +188,34 @@ export const useThemeStore = defineStore('theme', {
       } else {
         if (wasAuto) this._stopCycle()
         this.apply()
+      }
+    },
+
+    /** Preview accent hue live (updates CSS vars) without persisting. */
+    setAccentHue(hue: number) {
+      this.accentHue = hue
+      this._applyAccentVars(this.isDark)
+    },
+
+    /** Persist the current accent hue to localStorage. */
+    saveAccentHue() {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(ACCENT_KEY, String(this.accentHue))
+      }
+      this.accentHueSaved = this.accentHue
+    },
+
+    /** Write --accent and --accent-dim CSS vars for the given dark/light state. */
+    _applyAccentVars(dark: boolean) {
+      if (typeof document === 'undefined') return
+      const h = this.accentHue
+      const root = document.documentElement
+      if (dark) {
+        root.style.setProperty('--accent',     hslToRgbTriplet(h, 78, 62))
+        root.style.setProperty('--accent-dim', hslToRgbTriplet(h, 72, 46))
+      } else {
+        root.style.setProperty('--accent',     hslToRgbTriplet(h, 70, 42))
+        root.style.setProperty('--accent-dim', hslToRgbTriplet(h, 72, 35))
       }
     },
 
@@ -190,6 +296,7 @@ export const useThemeStore = defineStore('theme', {
         this.isDark = dark
         html.classList.toggle('dark', dark)
         html.classList.toggle('light', !dark)
+        this._applyAccentVars(dark)
 
         // Keep theme-color meta in sync
         const meta = document.querySelector('meta[name="theme-color"]')

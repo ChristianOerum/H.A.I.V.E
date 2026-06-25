@@ -21,6 +21,7 @@ const cursorWorld = ref<[number, number]>([0, 0])
 // ─── Hover / drag state ───────────────────────────────────────────────────────
 const hoveredEdge = ref<{ roomId: string; edgeIdx: number; t: number; cx: number; cz: number } | null>(null)
 const dragVertex = ref<{ roomId: string; vtxIdx: number } | null>(null)
+const dragOpening = ref<{ openingId: string; roomId: string; edgeIdx: number } | null>(null)
 const panStart = ref<{ clientX: number; clientY: number; ox: number; oy: number } | null>(null)
 const drawSnapVertex = ref<[number, number] | null>(null) // snapped to existing vertex in draw mode
 
@@ -110,6 +111,18 @@ function onSvgMove(e: PointerEvent) {
     fp.updateVertex(dragVertex.value.roomId, dragVertex.value.vtxIdx, [sx, sz])
     return
   }
+  if (dragOpening.value) {
+    const { openingId, roomId, edgeIdx } = dragOpening.value
+    const room = fp.rooms.find(r => r.id === roomId)
+    if (room) {
+      const [ax, az] = room.vertices[edgeIdx]
+      const [bx, bz] = room.vertices[(edgeIdx + 1) % room.vertices.length]
+      const [, , t] = closestOnSeg(wx, wz, ax, az, bx, bz)
+      const opening = fp.openings.find(o => o.id === openingId)
+      if (opening) { opening.t = t; fp.dirty = true }
+    }
+    return
+  }
   if (dragRoomsState.value) {
     const dx = wx - dragRoomsState.value.startWorld[0]
     const dz = wz - dragRoomsState.value.startWorld[1]
@@ -138,6 +151,7 @@ function onSvgMove(e: PointerEvent) {
 
 function onSvgUp(_e: PointerEvent) {
   dragVertex.value = null
+  dragOpening.value = null
   panStart.value = null
   dragRoomsState.value = null
 }
@@ -173,6 +187,7 @@ function onBgPointerDown(e: PointerEvent) {
   // select / erase: start pan on empty space
   panStart.value = { clientX: e.clientX, clientY: e.clientY, ox: vbX.value, oy: vbY.value }
   multiSelectedRoomIds.value.clear()
+  fp.selectedOpeningId = null
   fp.deselect()
 }
 
@@ -245,7 +260,15 @@ function onRoomPointerDown(roomId: string, e: PointerEvent) {
 
 function onOpeningPointerDown(openingId: string, e: PointerEvent) {
   e.stopPropagation()
-  if (mode.value === 'select' || mode.value === 'erase') fp.deleteOpening(openingId)
+  if (mode.value === 'erase') { fp.deleteOpening(openingId); return }
+  if (mode.value === 'select') {
+    const op = fp.openings.find(o => o.id === openingId)
+    if (!op) return
+    fp.selectedOpeningId = openingId
+    fp._push()
+    dragOpening.value = { openingId, roomId: op.roomId, edgeIdx: op.edgeIdx }
+    ;(e.currentTarget as SVGElement).setPointerCapture(e.pointerId)
+  }
 }
 
 function closePolygon() {
@@ -375,7 +398,7 @@ function openingMarker(e: EdgeInfo, op: typeof fp.openings[0]) {
     return {
       type: 'door' as const,
       lx, lz, rx, rz,
-      arcPath: `M ${rx},${rz} A ${op.width},${op.width} 0 0,1 ${ex},${ez}`,
+      arcPath: `M ${lx},${lz} A ${op.width},${op.width} 0 0,0 ${ex},${ez}`,
     }
   } else {
     // Window: two short crossing ticks
@@ -436,6 +459,35 @@ const selectedEdgeLabels = computed((): EdgeLabel[] => {
   })
 })
 
+// ─── Furniture footprints (reference overlay) ───────────────────────────────
+interface FurnitureFootprint {
+  id: string; label: string
+  cx: number; cz: number
+  w: number; d: number
+  rot: number
+  fill: string
+}
+
+const furnitureFootprints = computed<FurnitureFootprint[]>(() => {
+  return fp.furniture.map(item => {
+    const itemRot = item.rotY ?? 0
+    let cx = item.x, cz = item.z, rot = itemRot
+    if (item.groupId) {
+      const group = fp.furnitureGroups.find(g => g.id === item.groupId)
+      if (group) {
+        const rad = (group.rotY * Math.PI) / 180
+        const rx = item.x * Math.cos(rad) - item.z * Math.sin(rad)
+        const rz = item.x * Math.sin(rad) + item.z * Math.cos(rad)
+        cx = group.x + rx
+        cz = group.z + rz
+        rot = itemRot + group.rotY
+      }
+    }
+    const fill = '#000000'
+    return { id: item.id, label: item.label, cx, cz, w: item.w, d: item.d, rot, fill }
+  })
+})
+
 // ─── Colour helpers ───────────────────────────────────────────────────────────
 const ACCENT = '#5eead4'
 const WALL_STROKE = '#94a3b8'
@@ -461,7 +513,7 @@ function roomStroke(id: string) {
     leave-to-class="opacity-0"
   >
     <div
-      v-if="fp.editMode && fp.editorTab !== 'furniture' && fp.editorTab !== 'devices'"
+      v-if="fp.editMode && fp.editorTab !== 'furniture' && fp.editorTab !== 'devices' && fp.editorTab !== 'preferences'"
       class="absolute inset-0 right-80 z-10 bg-bg flex flex-col select-none"
       :class="mode === 'draw' ? 'cursor-crosshair' : mode === 'erase' ? 'cursor-not-allowed' : 'cursor-default'"
     >
@@ -488,7 +540,7 @@ function roomStroke(id: string) {
           Hover a wall edge, then click to place
         </span>
         <span v-if="mode === 'erase'" class="text-fg-muted italic hidden sm:inline">
-          Click room / vertex / opening to delete
+          Click room / vertex to delete · click opening to delete
         </span>
 
         <div class="w-px h-4 bg-bg-elevated mx-1" />
@@ -557,11 +609,17 @@ function roomStroke(id: string) {
               v-for="op in edge.openings"
               :key="op.id"
               :opacity="mode === 'erase' || mode === 'select' ? 1 : 0.9"
-              style="cursor: pointer"
+              :style="mode === 'select' ? { cursor: 'grab' } : { cursor: 'pointer' }"
+              :filter="fp.selectedOpeningId === op.id ? 'drop-shadow(0 0 0.12px #fff)' : undefined"
               @pointerdown="onOpeningPointerDown(op.id, $event)"
             >
               <template v-if="openingMarker(edge, op).type === 'door'">
-                <!-- Door: arc + jamb lines -->
+                <!-- Door: threshold line along wall + door leaf + arc -->
+                <line
+                  :x1="openingMarker(edge, op).lx" :y1="openingMarker(edge, op).lz"
+                  :x2="openingMarker(edge, op).rx" :y2="openingMarker(edge, op).rz"
+                  stroke="#f97316" stroke-width="0.08"
+                />
                 <path
                   :d="openingMarker(edge, op).arcPath"
                   fill="none"
@@ -607,6 +665,33 @@ function roomStroke(id: string) {
             stroke-width="0.05"
             pointer-events="none"
           />
+
+          <!-- ── Furniture reference footprints ── -->
+          <g
+            v-for="f in furnitureFootprints"
+            :key="'furn-' + f.id"
+            :transform="`translate(${f.cx},${f.cz}) rotate(${f.rot})`"
+            pointer-events="none"
+          >
+            <rect
+              :x="-f.w / 2" :y="-f.d / 2"
+              :width="f.w" :height="f.d"
+              :fill="f.fill"
+              fill-opacity="0.18"
+              :stroke="f.fill"
+              stroke-opacity="0.55"
+              stroke-width="0.04"
+              rx="0.06"
+            />
+            <text
+              x="0" y="0"
+              text-anchor="middle"
+              dominant-baseline="middle"
+              :font-size="Math.min(f.w, f.d) * 0.28"
+              :fill="f.fill"
+              fill-opacity="0.8"
+            >{{ f.label }}</text>
+          </g>
 
           <!-- ── Room name labels ── -->
           <text

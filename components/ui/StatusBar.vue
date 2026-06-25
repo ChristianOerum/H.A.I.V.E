@@ -48,6 +48,7 @@ const statusColor = computed(() => {
     </div>
     <div class="flex items-center gap-3 pointer-events-auto">
       <ThemeToggle />
+      <SaveViewButton />
       <button
         class="btn-touch !px-3 gap-2 text-sm"
         :class="theme.wallOpacityMode !== 'solid' ? 'text-accent border border-accent/50' : 'text-fg-muted'"

@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { TresCanvas } from '@tresjs/core'
 import { OrbitControls } from '@tresjs/cientos'
+import type { OrbitControls as ThreeOrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+
+const controlsRef = shallowRef<ThreeOrbitControls | null>(null)
 
 const layout = useLayoutStore()
 const entities = useEntitiesStore()
@@ -8,7 +11,10 @@ const sceneColors = useSceneColors()
 const fp = useFloorplanStore()
 
 const center = computed<[number, number, number]>(() => [fp.center[0], 0, fp.center[1]])
-const cameraPosition = computed<[number, number, number]>(() => [fp.center[0], 14, fp.center[1] + 12])
+const { savedView, isLocked } = useCameraView()
+const cameraPosition = computed<[number, number, number]>(() =>
+  savedView.value ? savedView.value.position : [fp.center[0], 14, fp.center[1] + 12],
+)
 
 const placedEntities = computed(() =>
   layout.placements
@@ -54,7 +60,9 @@ function furnitureLightFacing(furnitureId: string): number {
     <TresPerspectiveCamera :position="cameraPosition" :look-at="center" :fov="45" />
 
     <OrbitControls
+      ref="controlsRef"
       :target="center"
+      :enabled="!isLocked"
       :enable-pan="false"
       :enable-damping="true"
       :damping-factor="0.08"
@@ -63,6 +71,8 @@ function furnitureLightFacing(furnitureId: string): number {
       :min-polar-angle="0.2"
       :max-polar-angle="Math.PI / 2.2"
     />
+
+    <SceneCameraController :controls="controlsRef" />
 
     <TresAmbientLight :intensity="sceneColors.ambient" />
     <TresDirectionalLight :position="[8, 14, 8]" :intensity="sceneColors.sun" cast-shadow />

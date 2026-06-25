@@ -75,7 +75,7 @@ export interface FloorplanFurnitureGroup {
 
 export type FloorplanItemType = 'room' | 'furniture'
 export interface FloorplanSelection { type: FloorplanItemType; id: string }
-export type FloorplanEditorTab = 'rooms' | 'furniture' | 'devices'
+export type FloorplanEditorTab = 'rooms' | 'furniture' | 'devices' | 'preferences'
 
 function uid() {
   return crypto.randomUUID()
@@ -92,6 +92,7 @@ export const useFloorplanStore = defineStore('floorplan', {
     editMode: false,
     editorTab: 'rooms' as FloorplanEditorTab,
     selection: null as FloorplanSelection | null,
+    selectedOpeningId: null as string | null,
     dirty: false,
     _history: [] as Snapshot[],
     _future: [] as Snapshot[],

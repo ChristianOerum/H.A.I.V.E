@@ -103,7 +103,7 @@
     },
     {
       "id": "e80fa4f7-3a46-44f7-903c-eff7d6c995f5",
-      "name": "New Room",
+      "name": "Hallway",
       "vertices": [
         [
           -4,
@@ -125,6 +125,39 @@
       "tintH": 0,
       "tintV": 1,
       "wallH": 2
+    },
+    {
+      "id": "c5539a34-a0c8-4c68-8f16-df8c48cf4a39",
+      "name": "Balcony",
+      "vertices": [
+        [
+          -8,
+          -5
+        ],
+        [
+          -8,
+          -8
+        ],
+        [
+          0,
+          -8
+        ],
+        [
+          5,
+          -6
+        ],
+        [
+          5.25,
+          -2.75
+        ],
+        [
+          0,
+          -5
+        ]
+      ],
+      "tintH": 0,
+      "tintV": 1,
+      "wallH": 0.5
     }
   ],
   "openings": [
@@ -133,7 +166,7 @@
       "type": "window",
       "roomId": "r1",
       "edgeIdx": 0,
-      "t": 0.5,
+      "t": 0.44158525028448,
       "width": 1.4
     },
     {
@@ -176,6 +209,25 @@
       "edgeIdx": 3,
       "t": 0.7445940971374512,
       "width": 0.9
+    },
+    {
+      "id": "2956935c-140a-4de9-8793-95f90f28873c",
+      "type": "door",
+      "roomId": "r2",
+      "edgeIdx": 0,
+      "t": 0.49450570344924927,
+      "width": 1.4,
+      "height": 1.7
+    },
+    {
+      "id": "646d69af-ea3c-4fba-802e-444e87569578",
+      "type": "window",
+      "roomId": "r2",
+      "edgeIdx": 0,
+      "t": 0.7302949726581573,
+      "width": 2.05,
+      "height": 1.4,
+      "sill": 0.1
     }
   ],
   "furniture": [

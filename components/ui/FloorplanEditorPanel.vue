@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { Icon } from '@iconify/vue'
 import { getAdapter } from '~/utils/deviceRegistry'
+import { hexToHue, hueToHex, hueToHexLight } from '~/stores/theme'
 
 const fp = useFloorplanStore()
 const layout = useLayoutStore()
 const entities = useEntitiesStore()
+const theme = useThemeStore()
 
 const tab = computed({
   get: () => fp.editorTab,
@@ -86,10 +88,36 @@ function onPositionChange(entityId: string, axis: 0 | 1 | 2, e: Event) {
 }
 
 // ---- Save (floorplan or layout depending on active tab) ----
-const isDirty = computed(() => tab.value === 'devices' ? layout.dirty : fp.dirty)
+const isDirty = computed(() =>
+  tab.value === 'preferences'
+    ? theme.accentHue !== theme.accentHueSaved
+    : tab.value === 'devices' ? layout.dirty : fp.dirty,
+)
 function onSave() {
-  if (tab.value === 'devices') layout.save()
+  if (tab.value === 'preferences') theme.saveAccentHue()
+  else if (tab.value === 'devices') layout.save()
   else fp.save()
+}
+
+// ---- Preferences (accent colour) ----
+const ACCENT_PRESETS: { label: string; hue: number }[] = [
+  { label: 'Teal',   hue: 174 },
+  { label: 'Blue',   hue: 217 },
+  { label: 'Indigo', hue: 243 },
+  { label: 'Purple', hue: 270 },
+  { label: 'Rose',   hue: 347 },
+  { label: 'Amber',  hue:  38 },
+  { label: 'Green',  hue: 142 },
+]
+
+// Derived hex for the color-picker input (dark-mode accent swatch for hue)
+const accentPickerHex = computed(() => hueToHex(theme.accentHue))
+const accentDarkHex = computed(() => hueToHex(theme.accentHue))
+const accentLightHex = computed(() => hueToHexLight(theme.accentHue))
+
+function onAccentPickerInput(e: Event) {
+  const hex = (e.target as HTMLInputElement).value
+  theme.setAccentHue(hexToHue(hex))
 }
 </script>
 
@@ -146,10 +174,68 @@ function onSave() {
           :class="tab === t ? 'text-accent border-b-2 border-accent' : 'text-fg-muted'"
           @click="tab = t; fp.deselect(); selectedDeviceId = null"
         >{{ t }}</button>
+        <button
+          class="flex-1 py-2.5 text-xs capitalize transition-colors"
+          :class="tab === 'preferences' ? 'text-accent border-b-2 border-accent' : 'text-fg-muted'"
+          @click="tab = 'preferences'; fp.deselect(); selectedDeviceId = null"
+        >Prefs</button>
       </div>
 
       <!-- Scrollable list + forms -->
       <div class="flex-1 overflow-y-auto p-2 flex flex-col gap-1">
+
+        <!-- OPENING PROPERTIES (shown on top when an opening is selected) -->
+        <template v-if="fp.selectedOpeningId">
+          <div class="rounded-lg bg-bg-elevated border border-orange-400/30 p-3 flex flex-col gap-2">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span
+                  class="w-2 h-2 rounded-full shrink-0"
+                  :class="fp.openings.find(o => o.id === fp.selectedOpeningId)?.type === 'door' ? 'bg-orange-400' : 'bg-sky-400'"
+                />
+                <span class="text-xs font-medium text-fg capitalize">
+                  {{ fp.openings.find(o => o.id === fp.selectedOpeningId)?.type }} Properties
+                </span>
+              </div>
+              <div class="flex items-center gap-1">
+                <button
+                  class="text-xs text-red-400 px-2 py-0.5 rounded hover:bg-red-500/20"
+                  @click="fp.deleteOpening(fp.selectedOpeningId!); fp.selectedOpeningId = null"
+                >Del</button>
+                <button class="text-fg-muted text-xs px-2 py-0.5 rounded hover:bg-bg" @click="fp.selectedOpeningId = null">✕</button>
+              </div>
+            </div>
+            <template v-if="fp.openings.find(o => o.id === fp.selectedOpeningId) as any">
+              <div class="grid grid-cols-2 gap-2">
+                <label class="flex flex-col gap-1">
+                  <span class="text-[10px] text-fg-muted uppercase tracking-wide">Width (m)</span>
+                  <input type="number" step="0.05" min="0.3"
+                    class="bg-bg text-fg text-xs rounded px-2 py-1.5 border border-bg-elevated w-full"
+                    :value="fp.openings.find(o => o.id === fp.selectedOpeningId)!.width"
+                    @change="fp.updateOpening(fp.selectedOpeningId!, { width: numVal($event) })"
+                  />
+                </label>
+                <label class="flex flex-col gap-1">
+                  <span class="text-[10px] text-fg-muted uppercase tracking-wide">Height (m)</span>
+                  <input type="number" step="0.05" min="0.1"
+                    class="bg-bg text-fg text-xs rounded px-2 py-1.5 border border-bg-elevated w-full"
+                    :value="fp.openings.find(o => o.id === fp.selectedOpeningId)!.height ?? (fp.openings.find(o => o.id === fp.selectedOpeningId)!.type === 'door' ? 1.2 : 0.52)"
+                    @change="fp.updateOpening(fp.selectedOpeningId!, { height: numVal($event) })"
+                  />
+                </label>
+                <label v-if="fp.openings.find(o => o.id === fp.selectedOpeningId)?.type === 'window'" class="flex flex-col gap-1 col-span-2">
+                  <span class="text-[10px] text-fg-muted uppercase tracking-wide">Sill height (m)</span>
+                  <input type="number" step="0.05" min="0"
+                    class="bg-bg text-fg text-xs rounded px-2 py-1.5 border border-bg-elevated w-full"
+                    :value="fp.openings.find(o => o.id === fp.selectedOpeningId)!.sill ?? 0.34"
+                    @change="fp.updateOpening(fp.selectedOpeningId!, { sill: numVal($event) })"
+                  />
+                </label>
+              </div>
+            </template>
+          </div>
+          <div class="h-px bg-bg-elevated my-1 shrink-0" />
+        </template>
 
         <!-- ROOMS -->
         <template v-if="tab === 'rooms'">
@@ -593,6 +679,94 @@ function onSave() {
           </div>
         </template>
 
+        <!-- PREFERENCES -->
+        <template v-if="tab === 'preferences'">
+          <div class="flex flex-col gap-4 px-1 py-2">
+            <!-- Accent colour -->
+            <div class="flex flex-col gap-3">
+              <span class="text-[10px] text-fg-muted uppercase tracking-wide">Accent colour</span>
+
+              <!-- Hue presets -->
+              <div class="flex flex-wrap gap-2">
+                <button
+                  v-for="preset in ACCENT_PRESETS"
+                  :key="preset.hue"
+                  class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs border transition-colors"
+                  :class="theme.accentHue === preset.hue
+                    ? 'border-accent/70 bg-accent/10 text-fg'
+                    : 'border-bg-elevated bg-bg text-fg-muted hover:text-fg'"
+                  @click="theme.setAccentHue(preset.hue)"
+                >
+                  <span
+                    class="w-3 h-3 rounded-full shrink-0"
+                    :style="{ background: hueToHex(preset.hue) }"
+                  />
+                  {{ preset.label }}
+                </button>
+              </div>
+
+              <!-- Custom colour picker -->
+              <label class="flex flex-col gap-1">
+                <span class="text-[10px] text-fg-muted uppercase tracking-wide">Custom</span>
+                <div class="flex items-center gap-2">
+                  <input
+                    type="color"
+                    class="h-8 w-10 rounded cursor-pointer border border-bg-elevated bg-bg p-0.5 shrink-0"
+                    :value="accentPickerHex"
+                    @input="onAccentPickerInput"
+                  />
+                  <span class="text-xs text-fg-muted font-mono">{{ accentPickerHex }}</span>
+                </div>
+              </label>
+
+              <!-- Light / Dark preview cards -->
+              <div class="flex flex-col gap-2">
+                <span class="text-[10px] text-fg-muted uppercase tracking-wide">Preview</span>
+                <div class="flex gap-2">
+                  <!-- Dark mode card -->
+                  <div
+                    class="flex-1 rounded-lg p-3 flex flex-col gap-2"
+                    style="background:#1e293b"
+                  >
+                    <span class="text-[9px] uppercase tracking-wide" style="color:#94a3b8">Dark</span>
+                    <span class="text-sm font-semibold" :style="{ color: accentDarkHex }">Active text</span>
+                    <span
+                      class="self-start px-2 py-0.5 rounded text-xs font-medium"
+                      :style="{ background: accentDarkHex, color: '#1e293b' }"
+                    >Badge</span>
+                    <span
+                      class="self-start border rounded px-2 py-0.5 text-xs"
+                      :style="{ borderColor: accentDarkHex + '80', color: accentDarkHex }"
+                    >Border</span>
+                  </div>
+                  <!-- Light mode card -->
+                  <div
+                    class="flex-1 rounded-lg p-3 flex flex-col gap-2"
+                    style="background:#f8f5ee"
+                  >
+                    <span class="text-[9px] uppercase tracking-wide" style="color:#78716c">Light</span>
+                    <span class="text-sm font-semibold" :style="{ color: accentLightHex }">Active text</span>
+                    <span
+                      class="self-start px-2 py-0.5 rounded text-xs font-medium"
+                      :style="{ background: accentLightHex, color: '#f8f5ee' }"
+                    >Badge</span>
+                    <span
+                      class="self-start border rounded px-2 py-0.5 text-xs"
+                      :style="{ borderColor: accentLightHex + '80', color: accentLightHex }"
+                    >Border</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Reset -->
+              <button
+                class="btn-touch text-xs text-fg-muted border border-bg-elevated rounded-lg w-full"
+                @click="theme.setAccentHue(174)"
+              >Reset to default (Teal)</button>
+            </div>
+          </div>
+        </template>
+
       </div>
 
       <!-- Footer: Save -->
@@ -603,7 +777,7 @@ function onSave() {
           :disabled="!isDirty"
           @click="onSave()"
         >
-          {{ isDirty ? (tab === 'devices' ? 'Save Devices' : 'Save Floorplan') : 'No Changes' }}
+          {{ isDirty ? (tab === 'devices' ? 'Save Devices' : tab === 'preferences' ? 'Save Preferences' : 'Save Floorplan') : 'No Changes' }}
         </button>
       </div>
     </div>
