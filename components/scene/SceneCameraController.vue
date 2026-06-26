@@ -39,9 +39,10 @@ onMounted(() => {
 
   const canvas = renderer.value?.domElement
   if (canvas) {
-    canvas.addEventListener('pointerdown', onUserInteraction)
     canvas.addEventListener('wheel', onUserInteraction, { passive: true })
   }
+
+  document.addEventListener('pointerdown', onUserInteraction, { capture: true })
 
   scheduleReturn()
 })
@@ -50,9 +51,9 @@ onUnmounted(() => {
   if (idleTimer) clearTimeout(idleTimer)
   const canvas = renderer.value?.domElement
   if (canvas) {
-    canvas.removeEventListener('pointerdown', onUserInteraction)
     canvas.removeEventListener('wheel', onUserInteraction)
   }
+  document.removeEventListener('pointerdown', onUserInteraction, { capture: true })
 })
 
 // Smooth return animation — runs every frame when active.

@@ -119,6 +119,47 @@ function onAccentPickerInput(e: Event) {
   const hex = (e.target as HTMLInputElement).value
   theme.setAccentHue(hexToHue(hex))
 }
+
+// ---- Furniture group export / import ----
+const copiedGroupId = ref<string | null>(null)
+
+function exportGroup(groupId: string) {
+  const group = fp.furnitureGroups.find(g => g.id === groupId)
+  if (!group) return
+  const items = fp.furniture
+    .filter(f => f.groupId === groupId)
+    .map(({ id: _id, groupId: _gid, ...rest }) => rest)
+  const { id: _id, collapsed: _c, ...groupFields } = group
+  const preset = { ...groupFields, items }
+  navigator.clipboard.writeText(JSON.stringify(preset, null, 2)).then(() => {
+    copiedGroupId.value = groupId
+    setTimeout(() => { copiedGroupId.value = null }, 1500)
+  })
+}
+
+const showImportModal = ref(false)
+const importText = ref('')
+const importError = ref('')
+
+function onImport() {
+  importError.value = ''
+  try {
+    // Strip a single pair of surrounding quotes that can appear when copying
+    // from a chat message (e.g. "{ ... }" instead of { ... })
+    let text = importText.value.trim()
+    if (text.startsWith('"') && text.endsWith('"')) text = text.slice(1, -1)
+    const preset = JSON.parse(text)
+    if (typeof preset.label !== 'string' || !Array.isArray(preset.items)) {
+      importError.value = 'Invalid format: expected { label, x, y, z, rotY, items[] }'
+      return
+    }
+    fp.importFurnitureGroup(preset)
+    importText.value = ''
+    showImportModal.value = false
+  } catch {
+    importError.value = 'Invalid JSON — check the pasted text'
+  }
+}
 </script>
 
 <template>
@@ -396,6 +437,15 @@ function onAccentPickerInput(e: Event) {
                 @click.stop="fp.addFurniture(group.id)"
               >+</button>
               <button
+                v-if="!group.collapsed"
+                class="shrink-0 p-1 rounded transition-colors"
+                :class="copiedGroupId === group.id ? 'text-green-400' : 'text-fg-muted hover:text-accent'"
+                :title="copiedGroupId === group.id ? 'Copied!' : 'Export group to clipboard'"
+                @click.stop="exportGroup(group.id)"
+              >
+                <Icon :icon="copiedGroupId === group.id ? 'mdi:check' : 'mdi:export-variant'" class="text-sm" />
+              </button>
+              <button
                 class="text-xs text-red-400 px-1.5 py-0.5 rounded shrink-0 hover:bg-red-500/20"
                 title="Delete group (ungroups items)"
                 @click.stop="fp.deleteFurnitureGroup(group.id)"
@@ -407,7 +457,7 @@ function onAccentPickerInput(e: Event) {
               <!-- Group position controls -->
               <div class="px-3 py-2 bg-bg border-b border-bg-elevated" @click.stop>
                 <span class="text-[10px] text-fg-muted uppercase tracking-wide block mb-1.5">Group position</span>
-                <div class="grid grid-cols-4 gap-1.5">
+                <div class="grid grid-cols-3 gap-1.5">
                   <label class="flex flex-col gap-0.5">
                     <span class="text-[9px] text-fg-muted uppercase">X</span>
                     <input type="number" step="0.25"
@@ -432,12 +482,31 @@ function onAccentPickerInput(e: Event) {
                       @change="fp.updateFurnitureGroup(group.id, { z: numVal($event) })"
                     />
                   </label>
+                </div>
+                <span class="text-[10px] text-fg-muted uppercase tracking-wide block mt-2 mb-1.5">Group rotation</span>
+                <div class="grid grid-cols-3 gap-1.5">
                   <label class="flex flex-col gap-0.5">
-                    <span class="text-[9px] text-fg-muted uppercase">Rot°</span>
+                    <span class="text-[9px] text-fg-muted uppercase">Rot X°</span>
+                    <input type="number" step="5"
+                      class="bg-bg-elevated text-fg text-xs rounded px-1.5 py-1 border border-bg w-full"
+                      :value="group.rotX ?? 0"
+                      @change="fp.updateFurnitureGroup(group.id, { rotX: numVal($event) })"
+                    />
+                  </label>
+                  <label class="flex flex-col gap-0.5">
+                    <span class="text-[9px] text-fg-muted uppercase">Rot Y°</span>
                     <input type="number" step="5"
                       class="bg-bg-elevated text-fg text-xs rounded px-1.5 py-1 border border-bg w-full"
                       :value="group.rotY ?? 0"
                       @change="fp.updateFurnitureGroup(group.id, { rotY: numVal($event) })"
+                    />
+                  </label>
+                  <label class="flex flex-col gap-0.5">
+                    <span class="text-[9px] text-fg-muted uppercase">Rot Z°</span>
+                    <input type="number" step="5"
+                      class="bg-bg-elevated text-fg text-xs rounded px-1.5 py-1 border border-bg w-full"
+                      :value="group.rotZ ?? 0"
+                      @change="fp.updateFurnitureGroup(group.id, { rotZ: numVal($event) })"
                     />
                   </label>
                 </div>
@@ -496,7 +565,47 @@ function onAccentPickerInput(e: Event) {
               class="btn-touch text-xs text-accent border border-accent/40 rounded-lg flex-1"
               @click="fp.addFurniture()"
             >+ Add Item</button>
+            <button
+              class="btn-touch text-xs text-fg-muted border border-bg-elevated rounded-lg shrink-0 flex items-center gap-1 px-3"
+              title="Import a previously exported group preset"
+              @click="showImportModal = true"
+            ><Icon icon="mdi:import" class="text-sm" /> Import</button>
           </div>
+
+          <!-- Import modal -->
+          <Teleport to="body">
+            <div
+              v-if="showImportModal"
+              class="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+              @click.self="showImportModal = false"
+            >
+              <div class="bg-bg-panel border border-bg-elevated rounded-xl shadow-xl w-96 p-5 flex flex-col gap-3">
+                <div class="flex items-center justify-between">
+                  <span class="text-sm font-semibold text-fg">Import Furniture Group</span>
+                  <button class="text-fg-muted hover:text-fg text-base px-1" @click="showImportModal = false">✕</button>
+                </div>
+                <p class="text-[11px] text-fg-muted leading-relaxed">Paste an exported group JSON below. A new group will be created with fresh IDs.</p>
+                <textarea
+                  v-model="importText"
+                  rows="10"
+                  placeholder='{ "label": "My Group", "x": 0, "y": 0, "z": 0, "rotY": 0, "items": [...] }'
+                  class="bg-bg text-fg text-xs font-mono rounded-lg px-3 py-2 border border-bg-elevated w-full resize-y outline-none focus:border-accent"
+                  @click.stop
+                />
+                <p v-if="importError" class="text-xs text-red-400">{{ importError }}</p>
+                <div class="flex gap-2">
+                  <button
+                    class="btn-touch text-xs text-accent border border-accent/40 rounded-lg flex-1"
+                    @click="onImport"
+                  >Import</button>
+                  <button
+                    class="btn-touch text-xs text-fg-muted border border-bg-elevated rounded-lg flex-1"
+                    @click="showImportModal = false; importText = ''; importError = ''"
+                  >Cancel</button>
+                </div>
+              </div>
+            </div>
+          </Teleport>
         </template>
 
         <!-- DEVICES -->

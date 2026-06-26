@@ -48,16 +48,38 @@ export interface FloorplanFurniture {
   d: number
   tintH: number
   tintV: number
+  /** X-axis rotation in degrees. Default 0. */
+  rotX?: number
   /** Y-axis rotation in degrees. Default 0. */
   rotY?: number
+  /** Z-axis rotation in degrees. Default 0. */
+  rotZ?: number
   /** Optional explicit hex color override, e.g. '#a07850'. Overrides tint when set. */
   color?: string
-  /** XZ corner radius (plan view): 0 = sharp corners, up to min(w,d)/2 = circle footprint. */
+  /** Shape type: 'box' = sharp box, 'rounded' = corner-radius rect, 'ellipse' = oval footprint, 'sphere' = spheroid. */
+  shape?: 'box' | 'rounded' | 'ellipse' | 'sphere'
+  /** Sphere mode: 'full' = complete spheroid, 'half' = cut by a horizontal plane. Only used when shape is 'sphere'. Default 'full'. */
+  sphereMode?: 'full' | 'half'
+  /** Sphere style: 'pill' = equal XZ radii (circular footprint), 'elliptical' = independent W/D axes. Only used when shape is 'sphere'. Default 'pill'. */
+  sphereStyle?: 'pill' | 'elliptical'
+  /** Normalised Y cut position for half-sphere: -1 = bottom of sphere (shows full sphere), 0 = equator (true half), +1 = top (nothing visible). Only used when sphereMode is 'half'. Default 0. */
+  sphereCutY?: number
+  /** XZ corner radius (plan view): 0 = sharp corners, up to min(w,d)/2 = circle footprint. Only used when shape is 'rounded'. */
   radius?: number
   /** Y edge radius (vertical profile): 0 = flat top/bottom, up to h/2 = fully rounded edges. */
   radiusY?: number
+  /** Per-edge Y bevel radii [top, bottom]: overrides uniform radiusY when set. 0 = flat, h/2 = dome. */
+  edgeRadii?: [number, number]
+  /** Per-corner XZ radii [TL, TR, BR, BL] (clockwise from top-left in plan view). Overrides uniform `radius` per-corner. */
+  cornerRadii?: [number, number, number, number]
+  /** Per-corner arc aspect ratio ρ = ry/rx for each corner [TL, TR, BR, BL]. 1 = circular, D/W = oval match. Only meaningful in ellipse per-corner mode. */
+  cornerRho?: [number, number, number, number]
+  /** When true this item acts as a boolean subtractor within its group: it cuts a hole in all solid siblings. */
+  subtract?: boolean
   /** Optional group this item belongs to. */
   groupId?: string
+  /** Curve/arc segment count override for rounded or ellipse shapes. Higher = smoother. Undefined = auto-calculated from size. */
+  segments?: number
 }
 
 export interface FloorplanFurnitureGroup {
@@ -69,8 +91,12 @@ export interface FloorplanFurnitureGroup {
   x: number
   y: number
   z: number
+  /** X-axis rotation of the whole group in degrees. */
+  rotX?: number
   /** Y-axis rotation of the whole group in degrees. */
   rotY: number
+  /** Z-axis rotation of the whole group in degrees. */
+  rotZ?: number
 }
 
 export type FloorplanItemType = 'room' | 'furniture'
@@ -329,6 +355,21 @@ export const useFloorplanStore = defineStore('floorplan', {
     setFurnitureGroup(itemId: string, groupId: string | undefined) {
       const f = this.furniture.find((f) => f.id === itemId)
       if (f) { this._push(); f.groupId = groupId; this.dirty = true }
+    },
+    importFurnitureGroup(preset: {
+      label: string
+      x: number; y: number; z: number; rotY: number
+      items: Omit<FloorplanFurniture, 'id' | 'groupId'>[]
+    }) {
+      this._push()
+      const groupId = uid()
+      const g: FloorplanFurnitureGroup = { id: groupId, label: preset.label, collapsed: false, x: preset.x ?? 0, y: preset.y ?? 0, z: preset.z ?? 0, rotY: preset.rotY ?? 0 }
+      this.furnitureGroups.push(g)
+      for (const item of (preset.items ?? [])) {
+        this.furniture.push({ ...item, id: uid(), groupId })
+      }
+      this.dirty = true
+      return groupId
     },
   },
 })
