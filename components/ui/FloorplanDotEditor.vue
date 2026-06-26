@@ -328,6 +328,7 @@ interface EdgeInfo {
   roomId: string; edgeIdx: number
   x1: number; z1: number; x2: number; z2: number
   openings: FloorplanOpening[]
+  wallThickness: number
 }
 
 const allEdges = computed<EdgeInfo[]>(() => {
@@ -340,6 +341,7 @@ const allEdges = computed<EdgeInfo[]>(() => {
       result.push({
         roomId: room.id, edgeIdx: i, x1, z1, x2, z2,
         openings: fp.openings.filter(o => o.roomId === room.id && o.edgeIdx === i),
+        wallThickness: room.wallThickness ?? 0.15,
       })
     }
   }
@@ -379,6 +381,82 @@ function edgeSegments(e: EdgeInfo): Array<[number, number, number, number]> {
 
 function roomPolygonPoints(room: typeof fp.rooms[0]) {
   return room.vertices.map(v => `${v[0]},${v[1]}`).join(' ')
+}
+
+// ─── Wall band geometry ───────────────────────────────────────────────────────
+// Computes the inward-offset inner polygon using per-vertex mitre joins,
+// matching the same logic used by the 3D renderer.
+function roomInnerVerts(room: typeof fp.rooms[0]): [number, number][] {
+  const verts = room.vertices
+  const dist = room.wallThickness ?? 0.15
+  const n = verts.length
+  if (n < 3) return verts
+  // Detect winding: positive area = CCW (left normal = inward)
+  let area = 0
+  for (let i = 0; i < n; i++) {
+    const a = verts[i], b = verts[(i + 1) % n]
+    area += a[0] * b[1] - b[0] * a[1]
+  }
+  const sign = area >= 0 ? 1 : -1
+  const nrm: [number, number][] = []
+  for (let i = 0; i < n; i++) {
+    const a = verts[i], b = verts[(i + 1) % n]
+    const dx = b[0] - a[0], dz = b[1] - a[1]
+    const L = Math.hypot(dx, dz) || 1
+    nrm.push([-dz / L * sign, dx / L * sign])   // inward normal
+  }
+  return verts.map((v, i) => {
+    const n1 = nrm[(i + n - 1) % n], n2 = nrm[i]
+    let mx = n1[0] + n2[0], mz = n1[1] + n2[1]
+    const ml = Math.hypot(mx, mz)
+    if (ml < 1e-6) return [v[0] + n1[0] * dist, v[1] + n1[1] * dist] as [number, number]
+    mx /= ml; mz /= ml
+    const cos = Math.max(0.25, mx * n1[0] + mz * n1[1])
+    return [v[0] + mx * dist / cos, v[1] + mz * dist / cos] as [number, number]
+  })
+}
+
+// Build the SVG fill path for a wall band: outer polygon + inner polygon (hole)
+// + opening gap rectangles (holes), using the evenodd fill rule.
+function wallBandPath(room: typeof fp.rooms[0]): string {
+  const verts = room.vertices
+  const inner = roomInnerVerts(room)
+  const n = verts.length
+  const wallT = room.wallThickness ?? 0.15
+  // Detect inward normal sign (same winding check as roomInnerVerts)
+  let area = 0
+  for (let i = 0; i < n; i++) {
+    const a = verts[i], b = verts[(i + 1) % n]
+    area += a[0] * b[1] - b[0] * a[1]
+  }
+  const sign = area >= 0 ? 1 : -1
+  // Outer ring
+  let d = verts.map((v, i) => `${i === 0 ? 'M' : 'L'}${v[0]},${v[1]}`).join(' ') + 'Z'
+  // Inner ring (reversed so winding creates a hole with evenodd)
+  const innerRev = [...inner].reverse()
+  d += ' ' + innerRev.map((v, i) => `${i === 0 ? 'M' : 'L'}${v[0]},${v[1]}`).join(' ') + 'Z'
+  // Opening gap cuts (rectangles punched through the wall band)
+  for (let i = 0; i < n; i++) {
+    const ops = fp.openings.filter(o => o.roomId === room.id && o.edgeIdx === i)
+    if (!ops.length) continue
+    const v0 = verts[i], v1 = verts[(i + 1) % n]
+    const dx = v1[0] - v0[0], dz = v1[1] - v0[1]
+    const len = Math.hypot(dx, dz) || 1
+    const ux = dx / len, uz = dz / len
+    const nx = -uz * sign, nz = ux * sign   // inward normal
+    for (const op of ops) {
+      const cx = v0[0] + op.t * dx
+      const cz = v0[1] + op.t * dz
+      const hw = op.width / 2
+      // Rectangle from outer edge inward by wallT, spanning the opening width
+      const p0x = cx - ux * hw,        p0z = cz - uz * hw
+      const p1x = cx + ux * hw,        p1z = cz + uz * hw
+      const p2x = p1x + nx * wallT,    p2z = p1z + nz * wallT
+      const p3x = p0x + nx * wallT,    p3z = p0z + nz * wallT
+      d += ` M${p0x},${p0z} L${p1x},${p1z} L${p2x},${p2z} L${p3x},${p3z}Z`
+    }
+  }
+  return d
 }
 
 // Opening marker geometry (SVG)
@@ -590,16 +668,30 @@ function roomStroke(id: string) {
             @pointerdown="onRoomPointerDown(room.id, $event)"
           />
 
-          <!-- ── Wall edges (with opening gaps) ── -->
-          <g v-for="edge in allEdges" :key="edge.roomId + '-' + edge.edgeIdx">
+          <!-- ── Wall bands: filled ring (outer polygon + mitre-offset inner hole + opening cuts) ── -->
+          <path
+            v-for="room in fp.rooms"
+            :key="'wall-band-' + room.id"
+            :d="wallBandPath(room)"
+            fill-rule="evenodd"
+            :fill="WALL_STROKE"
+            fill-opacity="0.9"
+            stroke="none"
+            pointer-events="none"
+          />
+
+          <!-- ── Hovered edge highlight (thin overlay on the polygon boundary) ── -->
+          <g
+            v-for="edge in allEdges.filter(e => hoveredEdge?.roomId === e.roomId && hoveredEdge?.edgeIdx === e.edgeIdx)"
+            :key="'hover-' + edge.roomId + '-' + edge.edgeIdx"
+            pointer-events="none"
+          >
             <line
-              v-for="([x1, z1, x2, z2], si) in edgeSegments(edge)"
-              :key="si"
-              :x1="x1" :y1="z1" :x2="x2" :y2="z2"
-              :stroke="hoveredEdge?.roomId === edge.roomId && hoveredEdge?.edgeIdx === edge.edgeIdx
-                ? WALL_STROKE_HOVERED : WALL_STROKE"
-              stroke-width="0.1"
-              stroke-linecap="round"
+              :x1="edge.x1" :y1="edge.z1" :x2="edge.x2" :y2="edge.z2"
+              :stroke="WALL_STROKE_HOVERED"
+              :stroke-width="edge.wallThickness * 2"
+              stroke-linecap="square"
+              opacity="0.6"
             />
           </g>
 

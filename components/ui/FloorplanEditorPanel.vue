@@ -321,12 +321,20 @@ function onImport() {
                     @change="fp.updateRoom(room.id, { tintV: numVal($event) })"
                   />
                 </label>
-                <label class="flex flex-col gap-1 col-span-2">
+                <label class="flex flex-col gap-1">
                   <span class="text-[10px] text-fg-muted uppercase tracking-wide">Wall height (m)</span>
                   <input type="number" step="0.05" min="0.5" max="6"
                     class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-full"
                     :value="room.wallH ?? 1.2"
                     @change="fp.updateRoom(room.id, { wallH: numVal($event) })"
+                  />
+                </label>
+                <label class="flex flex-col gap-1">
+                  <span class="text-[10px] text-fg-muted uppercase tracking-wide">Wall thickness (m)</span>
+                  <input type="number" step="0.01" min="0.05" max="1"
+                    class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-full"
+                    :value="room.wallThickness ?? 0.15"
+                    @change="fp.updateRoom(room.id, { wallThickness: numVal($event) })"
                   />
                 </label>
                 <label class="flex flex-col gap-1 col-span-2">

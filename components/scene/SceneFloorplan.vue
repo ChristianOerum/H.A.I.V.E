@@ -116,20 +116,28 @@ function wallSegKey(x1: number, z1: number, x2: number, z2: number): string {
 }
 
 // ─── Mitred wall corner offsets ──────────────────────────────────────────────
-// For each room we offset the centreline polygon by ±T/2 with proper mitre joins
-// at every vertex. Adjacent wall quads then share the exact same mitred corner
-// points, so they meet cleanly at both convex and concave corners instead of
-// overshooting/notching the way square box ends do.
+// For each room we offset the polygon inward (left side) by the full wall
+// thickness and keep the outer (right) side on the polygon edge (distRight=0).
+// The polygon boundary is therefore the OUTER face of every wall.
 interface RoomOffsets { left: [number, number][]; right: [number, number][]; nrm: [number, number][] }
 
-function computeRoomOffsets(verts: [number, number][], dist: number): RoomOffsets {
+function computeRoomOffsets(verts: [number, number][], distLeft: number, distRight: number = distLeft): RoomOffsets {
   const n = verts.length
+  // Detect polygon winding: positive signed area = CCW in standard XY/XZ,
+  // where the left-hand normal points inward. Negate normals for CW polygons
+  // so "left" always means toward the room interior.
+  let area = 0
+  for (let i = 0; i < n; i++) {
+    const a = verts[i], b = verts[(i + 1) % n]
+    area += a[0] * b[1] - b[0] * a[1]
+  }
+  const windSign = area >= 0 ? 1 : -1
   const nrm: [number, number][] = []
   for (let i = 0; i < n; i++) {
     const a = verts[i], b = verts[(i + 1) % n]
     let dx = b[0] - a[0], dz = b[1] - a[1]
     const L = Math.hypot(dx, dz) || 1
-    nrm.push([-dz / L, dx / L])   // unit left-hand normal of edge i
+    nrm.push([-dz / L * windSign, dx / L * windSign])   // inward normal of edge i
   }
   const left: [number, number][] = []
   const right: [number, number][] = []
@@ -139,17 +147,16 @@ function computeRoomOffsets(verts: [number, number][], dist: number): RoomOffset
     const ml = Math.hypot(mx, mz)
     if (ml < 1e-6) {
       // 180° degenerate (collinear edges) — just step out along the edge normal.
-      left.push([verts[i][0] + n1[0] * dist, verts[i][1] + n1[1] * dist])
-      right.push([verts[i][0] - n1[0] * dist, verts[i][1] - n1[1] * dist])
+      left.push([verts[i][0] + n1[0] * distLeft, verts[i][1] + n1[1] * distLeft])
+      right.push([verts[i][0] - n1[0] * distRight, verts[i][1] - n1[1] * distRight])
       continue
     }
     mx /= ml; mz /= ml
     // cos(half-angle) between the mitre direction and an edge normal; clamp to
     // avoid runaway spikes on very sharp corners (caps mitre length at 4·dist).
     const cos = Math.max(0.25, mx * n1[0] + mz * n1[1])
-    const len = dist / cos
-    left.push([verts[i][0] + mx * len, verts[i][1] + mz * len])
-    right.push([verts[i][0] - mx * len, verts[i][1] - mz * len])
+    left.push([verts[i][0] + mx * (distLeft / cos), verts[i][1] + mz * (distLeft / cos)])
+    right.push([verts[i][0] - mx * (distRight / cos), verts[i][1] - mz * (distRight / cos)])
   }
   return { left, right, nrm }
 }
@@ -191,11 +198,25 @@ const wallPieces = computed<WallPiece[]>(() => {
   const pieces: WallPiece[] = []
   const seen = new Set<string>()
   const usedKeys = new Set<string>()
-  const HALF_T = WALL_THICK / 2
+  // Full wall thickness per room; outer face sits on the polygon edge (distRight=0).
+  const roomT = (roomId: string) => fp.rooms.find(r => r.id === roomId)?.wallThickness ?? WALL_THICK
+  // Winding sign: +1 if CCW-in-math / CW-on-screen (positive shoelace area = inward is left-normal),
+  // -1 if opposite. Used to ensure all perpendicular offsets point toward the room interior.
+  const roomWindSign = (roomId: string): number => {
+    const room = fp.rooms.find(r => r.id === roomId)
+    if (!room) return 1
+    let a = 0
+    const verts = room.vertices, n = verts.length
+    for (let i = 0; i < n; i++) {
+      const vi = verts[i], vn = verts[(i + 1) % n]
+      a += vi[0] * vn[1] - vn[0] * vi[1]
+    }
+    return a >= 0 ? 1 : -1
+  }
 
   const offsetsByRoom = new Map<string, RoomOffsets>()
   for (const room of fp.rooms)
-    offsetsByRoom.set(room.id, computeRoomOffsets(room.vertices, WALL_THICK / 2))
+    offsetsByRoom.set(room.id, computeRoomOffsets(room.vertices, roomT(room.id), 0))
 
   // ── Junction-aware corners ───────────────────────────────────────────────
   // Where 3+ walls meet, the per-room mitres overshoot. Each gap is resolved to
@@ -247,14 +268,6 @@ const wallPieces = computed<WallPiece[]>(() => {
       g = ((g % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)
       gaps.push(g)
     }
-    // Purely right-angled junctions (every gap a multiple of 90°) already meet
-    // cleanly with the plain per-room square offsets — skip the heavy mitre/cut.
-    const rectilinear = gaps.every(g => {
-      const r = g % (Math.PI / 2)
-      return Math.min(r, Math.PI / 2 - r) < 0.05
-    })
-    if (rectilinear) continue
-
     let gi = 0
     for (let i = 1; i < m; i++) if (gaps[i] > gaps[gi]) gi = i
 
@@ -266,20 +279,27 @@ const wallPieces = computed<WallPiece[]>(() => {
     const gapPts: GapPt[] = []
     for (let i = 0; i < m; i++) {
       const A = hes[i], B = hes[(i + 1) % m]
-      const qA: [number, number] = [px - A.dirz * HALF_T, pz + A.dirx * HALF_T]  // A's CCW foot
-      const qB: [number, number] = [px + B.dirz * HALF_T, pz - B.dirx * HALF_T]  // B's CW  foot
+      // Effective distance: inner-face (L-slot) corners use full thickness;
+      // outer-face (R-slot) corners sit on the polygon edge (dist = 0).
+      const tA = roomT(A.roomId), tB = roomT(B.roomId)
+      const wsA = roomWindSign(A.roomId), wsB = roomWindSign(B.roomId)
+      const htA = slotFor(A.end, 'CCW') === 'L' ? tA : 0
+      const htB = slotFor(B.end, 'CW')  === 'L' ? tB : 0
+      // Inward normal = windSign × left-hand normal of each wall's away direction.
+      const nAx = -A.dirz * wsA, nAz = A.dirx * wsA
+      const nBx =  B.dirz * wsB, nBz = -B.dirx * wsB
+      const qA: [number, number] = [px + nAx * htA, pz + nAz * htA]  // A's CCW foot (inner or on edge)
+      const qB: [number, number] = [px + nBx * htB, pz + nBz * htB]  // B's CW  foot (inner or on edge)
       if (i !== gi && gaps[i] > 0.05 && gaps[i] < Math.PI - 0.05) {
-        const nAx = -A.dirz, nAz = A.dirx
-        const nBx = B.dirz, nBz = -B.dirx
-        const p1x = px + nAx * HALF_T, p1z = pz + nAz * HALF_T
-        const p2x = px + nBx * HALF_T, p2z = pz + nBz * HALF_T
+        const p1x = px + nAx * htA, p1z = pz + nAz * htA
+        const p2x = px + nBx * htB, p2z = pz + nBz * htB
         const wx = p2x - p1x, wz = p2z - p1z
         const det = B.dirx * A.dirz - A.dirx * B.dirz
         if (Math.abs(det) > 1e-6) {
           const s = (-wx * B.dirz + B.dirx * wz) / det
           let cx = p1x + s * A.dirx, cz = p1z + s * A.dirz
           const d = Math.hypot(cx - px, cz - pz)
-          if (d > HALF_T * 8) { const f = (HALF_T * 8) / d; cx = px + (cx - px) * f; cz = pz + (cz - pz) * f }
+          const htCap = Math.max(htA, htB); if (d > htCap * 8) { const f = (htCap * 8) / d; cx = px + (cx - px) * f; cz = pz + (cz - pz) * f }
           gapPts.push({ miter: [cx, cz] })
         } else { gapPts.push({ a: qA, b: qB }) }
       } else {
@@ -318,6 +338,37 @@ const wallPieces = computed<WallPiece[]>(() => {
     if (poly.length >= 3) caps.push({ key: `cap-${pk}`, poly, h: capH })
   }
 
+  // ── T-junction perpendicular-cut detection ───────────────────────────────
+  // When a room's polygon vertex lies on the INTERIOR of another room's wall
+  // segment (not at a shared endpoint), the standard intra-room mitre produces a
+  // diagonal notch rather than a flush cut.  Flag those vertices so cutAt() uses
+  // a straight perpendicular cut instead.
+  const tJunctionKeys = new Set<string>()
+  {
+    const TJ_EPS = 0.015
+    for (const room of fp.rooms) {
+      for (const V of room.vertices) {
+        const vk = pkey(V[0], V[1])
+        // Already handled by the 3+-way junction algorithm above — skip.
+        if ((junctionMap.get(vk)?.length ?? 0) >= 3) continue
+        for (const w of fp.derivedWalls) {
+          if (w.roomId === room.id) continue
+          const wdx = w.x2 - w.x1, wdz = w.z2 - w.z1
+          const wLen = Math.hypot(wdx, wdz)
+          if (wLen < 0.01) continue
+          const tP = ((V[0] - w.x1) * wdx + (V[1] - w.z1) * wdz) / (wLen * wLen)
+          // Must be strictly interior — not at the segment's own endpoints.
+          if (tP <= TJ_EPS / wLen || tP >= 1 - TJ_EPS / wLen) continue
+          const projX = w.x1 + tP * wdx, projZ = w.z1 + tP * wdz
+          if (Math.hypot(V[0] - projX, V[1] - projZ) < TJ_EPS) {
+            tJunctionKeys.add(vk)
+            break
+          }
+        }
+      }
+    }
+  }
+
   for (const wall of fp.derivedWalls) {
     // Skip the duplicate side of a shared interior wall
     const segKey = wallSegKey(wall.x1, wall.z1, wall.x2, wall.z2)
@@ -341,20 +392,38 @@ const wallPieces = computed<WallPiece[]>(() => {
     // jambs) we cut perpendicular to the wall so openings stay square.
     const cutAt = (t: number): { L: [number, number]; R: [number, number] } => {
       if (off && t <= 1e-4) {
-        const l = cornerOv.get(ovKey(wall.roomId, vi, 'A', 'L')) ?? off.left[vi]
-        const r = cornerOv.get(ovKey(wall.roomId, vi, 'A', 'R')) ?? off.right[vi]
-        return { L: l, R: r }
+        const ovL = cornerOv.get(ovKey(wall.roomId, vi, 'A', 'L'))
+        const ovR = cornerOv.get(ovKey(wall.roomId, vi, 'A', 'R'))
+        if (ovL !== undefined || ovR !== undefined)
+          return { L: ovL ?? off.left[vi], R: ovR ?? off.right[vi] }
+        if (tJunctionKeys.has(pkey(wall.x1, wall.z1))) {
+          // Perpendicular (square) cut — no mitre — so the stem terminates flush
+          // against the crossing wall rather than leaving a diagonal notch.
+          const wallFullT = roomT(wall.roomId)
+          const nnx = off.nrm[vi][0], nnz = off.nrm[vi][1]
+          return { L: [wall.x1 + nnx * wallFullT, wall.z1 + nnz * wallFullT], R: [wall.x1, wall.z1] }
+        }
+        return { L: off.left[vi], R: off.right[vi] }
       }
       if (off && t >= 1 - 1e-4) {
-        const l = cornerOv.get(ovKey(wall.roomId, vi, 'B', 'L')) ?? off.left[viNext]
-        const r = cornerOv.get(ovKey(wall.roomId, vi, 'B', 'R')) ?? off.right[viNext]
-        return { L: l, R: r }
+        const ovL = cornerOv.get(ovKey(wall.roomId, vi, 'B', 'L'))
+        const ovR = cornerOv.get(ovKey(wall.roomId, vi, 'B', 'R'))
+        if (ovL !== undefined || ovR !== undefined)
+          return { L: ovL ?? off.left[viNext], R: ovR ?? off.right[viNext] }
+        if (tJunctionKeys.has(pkey(wall.x2, wall.z2))) {
+          const wallFullT = roomT(wall.roomId)
+          const nnx = off.nrm[vi][0], nnz = off.nrm[vi][1]
+          return { L: [wall.x2 + nnx * wallFullT, wall.z2 + nnz * wallFullT], R: [wall.x2, wall.z2] }
+        }
+        return { L: off.left[viNext], R: off.right[viNext] }
       }
       const cx = wall.x1 + t * dx
       const cz = wall.z1 + t * dz
-      const nx = (off ? off.nrm[vi][0] : -wallNormZ) * HALF_T
-      const nz = (off ? off.nrm[vi][1] : wallNormX) * HALF_T
-      return { L: [cx + nx, cz + nz], R: [cx - nx, cz - nz] }
+      // Outer face is on the polygon edge; inner face is full thickness inward.
+      const wallFullT = roomT(wall.roomId)
+      const nnx = off ? off.nrm[vi][0] : -wallNormZ
+      const nnz = off ? off.nrm[vi][1] : wallNormX
+      return { L: [cx + nnx * wallFullT, cz + nnz * wallFullT], R: [cx, cz] }
     }
 
     // This handles exact shared walls (opposite direction), partial overlaps
@@ -426,6 +495,24 @@ const wallPieces = computed<WallPiece[]>(() => {
   return pieces
 })
 
+// ─── Merge all wall pieces into a single geometry ────────────────────────────
+// Avoids Z-fighting, lighting seams and shadow artifacts between adjacent pieces.
+const mergedWallGeo = shallowRef<BufferGeometry | null>(null)
+watch(wallPieces, (pieces) => {
+  const prev = mergedWallGeo.value
+  const geos = pieces.map(p => p.geo)
+  if (geos.length === 0) {
+    mergedWallGeo.value = null
+  } else {
+    const merged = mergeGeometries(geos, false)
+    merged.computeVertexNormals()
+    mergedWallGeo.value = merged
+  }
+  prev?.dispose()
+}, { immediate: true })
+
+onBeforeUnmount(() => mergedWallGeo.value?.dispose())
+
 // ─── Window glass + sill ledge geometry ──────────────────────────────────────
 
 const SILL_LEDGE_H     = 0.028          // height of the ledge shelf
@@ -486,12 +573,32 @@ const windowPieces = computed<WindowPiece[]>(() => {
     const rotY = -Math.atan2(dz, dx)
     const wallNormX = dx / len
     const wallNormZ = dz / len
-    const wallH = fp.rooms.find(r => r.id === wall.roomId)?.wallH ?? WALL_HEIGHT
+    const room = fp.rooms.find(r => r.id === wall.roomId)
+    const wallH = room?.wallH ?? WALL_HEIGHT
+    const wallThick = room?.wallThickness ?? WALL_THICK
+
+    // Inward wall normal — same winding logic as wallPieces / computeRoomOffsets.
+    // The wall polygon's outer face sits on the polygon edge; the midplane is
+    // halfThick inward, which is where the glass and sill ledge should be centred.
+    let windSign = 1
+    if (room) {
+      let area = 0
+      const verts = room.vertices, nv = verts.length
+      for (let i = 0; i < nv; i++) {
+        const a = verts[i], b = verts[(i + 1) % nv]
+        area += a[0] * b[1] - b[0] * a[1]
+      }
+      windSign = area >= 0 ? 1 : -1
+    }
+    const nnx = -wallNormZ * windSign
+    const nnz =  wallNormX * windSign
+    const halfThick = wallThick / 2
 
     for (const op of activeOpeningsForWall(wall, wallNormX, wallNormZ, len)) {
       if (op.type !== 'window') continue
-      const cx = wall.x1 + op.t * dx
-      const cz = wall.z1 + op.t * dz
+      // Centre on the wall midplane (outer face + halfThick inward)
+      const cx = wall.x1 + op.t * dx + nnx * halfThick
+      const cz = wall.z1 + op.t * dz + nnz * halfThick
       const sillY = op.sill ?? wallH * 0.28
       const glassH = op.height ?? wallH * 0.52
       pieces.push({ key: `${wall.roomId}-${wall.edgeIdx}-${Math.round(op.t * 1000)}-wp`, cx, cz, width: op.width, rotY, sillY, glassH })
@@ -1054,11 +1161,10 @@ onUnmounted(() => {
       <TresMeshStandardMaterial :color="roomColor(room)" :roughness="0.95" />
     </TresMesh>
 
-    <!-- Auto-derived walls (with door/window opening gaps) -->
+    <!-- Auto-derived walls (with door/window opening gaps) — single merged mesh -->
     <TresMesh
-      v-for="piece in wallPieces"
-      :key="piece.key"
-      :geometry="piece.geo"
+      v-if="mergedWallGeo"
+      :geometry="mergedWallGeo"
       :position="[0, 0, 0]"
       cast-shadow
       receive-shadow
@@ -1080,14 +1186,14 @@ onUnmounted(() => {
       :position="[wp.cx, wp.sillY + wp.glassH / 2, wp.cz]"
       :rotation="[0, wp.rotY, 0]"
     >
-      <TresBoxGeometry :args="[wp.width, wp.glassH, 0.008]" />
+      <TresBoxGeometry :args="[wp.width, wp.glassH, 0.022]" />
       <TresMeshStandardMaterial
         :key="`gm-${theme.wallOpacityMode}`"
-        color="#a8d8f0"
-        :roughness="0.05"
-        :metalness="0.1"
+        color="#ffffff"
+        :roughness="0.0"
+        :metalness="0.0"
         :transparent="true"
-        :opacity="0.32 * theme.wallOpacity"
+        :opacity="0.5"
         :depth-write="false"
       />
     </TresMesh>

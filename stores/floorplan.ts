@@ -9,6 +9,8 @@ export interface FloorplanRoom {
   tintV: number
   /** Wall height in metres. Defaults to 2.4. */
   wallH?: number
+  /** Wall thickness in metres. Defaults to 0.15. */
+  wallThickness?: number
   /** Optional explicit hex floor color override, e.g. '#c8b89a'. Overrides tint when set. */
   color?: string
 }

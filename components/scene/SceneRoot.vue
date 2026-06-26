@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { TresCanvas } from '@tresjs/core'
 import { OrbitControls } from '@tresjs/cientos'
+import * as THREE from 'three'
+import type { DirectionalLight } from 'three'
 
 const layout = useLayoutStore()
 const entities = useEntitiesStore()
@@ -8,6 +10,35 @@ const sceneColors = useSceneColors()
 const fp = useFloorplanStore()
 
 const center = computed<[number, number, number]>(() => [fp.center[0], 0, fp.center[1]])
+
+/** Half-extents of the floorplan AABB, used to size the shadow camera frustum tightly. */
+const shadowHalfExtent = computed(() => {
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity
+  for (const room of fp.rooms) {
+    for (const [x, z] of room.vertices) {
+      if (x < minX) minX = x; if (x > maxX) maxX = x
+      if (z < minZ) minZ = z; if (z > maxZ) maxZ = z
+    }
+  }
+  if (!isFinite(minX)) return 12
+  const hw = (maxX - minX) / 2 + 2   // +2m margin on each side
+  const hd = (maxZ - minZ) / 2 + 2
+  return Math.ceil(Math.max(hw, hd))
+})
+
+const sunLight = ref<DirectionalLight | null>(null)
+watchEffect(() => {
+  const light = sunLight.value
+  if (!light) return
+  const h = shadowHalfExtent.value
+  light.shadow.bias = 0.0
+  light.shadow.normalBias = 0.04
+  light.shadow.mapSize.set(2048, 2048)
+  const cam = light.shadow.camera as THREE.OrthographicCamera
+  cam.left = -h; cam.right = h; cam.top = h; cam.bottom = -h
+  cam.near = 0.1; cam.far = 60
+  cam.updateProjectionMatrix()
+})
 const { savedView, isLocked, isReturning } = useCameraView()
 const cameraPosition = computed<[number, number, number]>(() =>
   savedView.value ? savedView.value.position : [fp.center[0], 14, fp.center[1] + 12],
@@ -71,7 +102,12 @@ function furnitureLightFacing(furnitureId: string): number {
     <SceneCameraController />
 
     <TresAmbientLight :intensity="sceneColors.ambient" />
-    <TresDirectionalLight :position="[8, 14, 8]" :intensity="sceneColors.sun" cast-shadow />
+    <TresDirectionalLight
+      ref="sunLight"
+      :position="[8, 14, 8]"
+      :intensity="sceneColors.sun"
+      cast-shadow
+    />
 
     <SceneFloorplan />
 
