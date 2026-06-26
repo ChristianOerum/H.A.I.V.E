@@ -8,6 +8,7 @@ export interface SavedCameraView {
 // Module-level singleton state — shared across all useCameraView() calls.
 const savedView = ref<SavedCameraView | null>(null)
 const isLocked = ref(false)
+const isReturning = ref(false)
 const _saveCallback = ref<(() => void) | null>(null)
 
 // Load persisted state from localStorage on first module evaluation (client only).
@@ -51,5 +52,5 @@ export function useCameraView() {
     }
   }
 
-  return { savedView, hasSaved, isLocked, toggleLock, saveView, registerSaveCallback, persistView }
+  return { savedView, hasSaved, isLocked, isReturning, toggleLock, saveView, registerSaveCallback, persistView }
 }
