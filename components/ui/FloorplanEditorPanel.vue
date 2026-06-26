@@ -18,6 +18,9 @@ const newDeviceEntityId = ref('')
 
 /** Locally-tracked set of expanded group IDs — resets to empty when the furniture tab opens. */
 const expandedGroupIds = ref(new Set<string>())
+
+/** Group ID currently open in the isolated 3D editor, or null if closed. */
+const viewerGroupId = ref<string | null>(null)
 watch(() => fp.editorTab, (t) => { if (t === 'furniture') expandedGroupIds.value = new Set() })
 
 function toggleGroup(id: string) {
@@ -268,6 +271,27 @@ function exportGroup(groupId: string) {
 const showImportModal = ref(false)
 const importText = ref('')
 const importError = ref('')
+
+const showLibraryModal = ref(false)
+const librarySearch = ref('')
+
+const filteredLibrary = computed(() => {
+  const q = librarySearch.value.trim().toLowerCase()
+  if (!q) return FURNITURE_LIBRARY
+  return FURNITURE_LIBRARY.filter(p => p.label.toLowerCase().includes(q))
+})
+
+// Load all JSON files from config/furnitureLibrary/ — add new presets by dropping a .json file there
+const _libraryModules = import.meta.glob('~/config/furnitureLibrary/*.json', { eager: true })
+const FURNITURE_LIBRARY = Object.values(_libraryModules) as Array<{
+  label: string; x?: number; y?: number; z?: number; rotY?: number
+  items: import('~/stores/floorplan').FloorplanFurniture[]
+}>
+
+function onInsertFromLibrary(preset: typeof FURNITURE_LIBRARY[number]) {
+  fp.importFurnitureGroup(preset)
+  showLibraryModal.value = false
+}
 
 function onImport() {
   importError.value = ''
@@ -708,6 +732,24 @@ function onImport() {
                     />
                   </label>
                 </div>
+                <!-- Follow theme colors toggle -->
+                <label class="mt-2 flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    class="accent-accent w-3.5 h-3.5 rounded"
+                    :checked="group.followTheme ?? false"
+                    @change="fp.updateFurnitureGroup(group.id, { followTheme: ($event.target as HTMLInputElement).checked })"
+                    @click.stop
+                  />
+                  <span class="text-xs text-fg-muted">Follow theme colors</span>
+                </label>
+                <!-- Open isolated 3D editor for this group -->
+                <button
+                  class="mt-1 w-full py-1.5 rounded-lg border border-bg text-xs text-fg-muted hover:text-accent hover:border-accent/50 transition-colors flex items-center justify-center gap-1.5 bg-bg-elevated"
+                  @click.stop="viewerGroupId = group.id"
+                >
+                  <span>⬡</span> Edit in 3D
+                </button>
               </div>
               <!-- Items list -->
               <div>
@@ -754,21 +796,77 @@ function onImport() {
           </div>
 
           <!-- Action buttons -->
-          <div class="shrink-0 flex gap-2 mt-1">
-            <button
-              class="btn-touch text-xs text-accent border border-accent/40 rounded-lg flex-1"
-              @click="fp.addFurnitureGroup()"
-            >+ Add Group</button>
-            <button
-              class="btn-touch text-xs text-accent border border-accent/40 rounded-lg flex-1"
-              @click="fp.addFurniture()"
-            >+ Add Item</button>
-            <button
-              class="btn-touch text-xs text-fg-muted border border-bg-elevated rounded-lg shrink-0 flex items-center gap-1 px-3"
-              title="Import a previously exported group preset"
-              @click="showImportModal = true"
-            ><Icon icon="mdi:import" class="text-sm" /> Import</button>
+          <div class="shrink-0 flex flex-col gap-2 mt-1">
+            <div class="flex gap-2">
+              <button
+                class="btn-touch text-xs text-accent border border-accent/40 rounded-lg flex-1"
+                @click="fp.addFurnitureGroup()"
+              >+ Add Group</button>
+              <button
+                class="btn-touch text-xs text-accent border border-accent/40 rounded-lg flex-1"
+                @click="fp.addFurniture()"
+              >+ Add Item</button>
+            </div>
+            <div class="flex gap-2">
+              <button
+                class="btn-touch text-xs text-fg-muted border border-bg-elevated rounded-lg flex-1 flex items-center justify-center gap-1"
+                title="Browse built-in furniture presets"
+                @click="showLibraryModal = true"
+              ><Icon icon="mdi:bookshelf" class="text-sm" /> Library</button>
+              <button
+                class="btn-touch text-xs text-fg-muted border border-bg-elevated rounded-lg flex-1 flex items-center justify-center gap-1"
+                title="Import a previously exported group preset"
+                @click="showImportModal = true"
+              ><Icon icon="mdi:import" class="text-sm" /> Import</button>
+            </div>
           </div>
+
+          <!-- Library modal -->
+          <Teleport to="body">
+            <div
+              v-if="showLibraryModal"
+              class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6"
+              @click.self="showLibraryModal = false"
+            >
+              <div class="bg-bg-panel border border-bg-elevated rounded-xl shadow-xl w-full max-w-4xl flex flex-col gap-0 max-h-[90vh]" style="height:min(90vh,700px)">
+                <!-- Header -->
+                <div class="flex items-center justify-between px-5 pt-5 pb-3 shrink-0">
+                  <span class="text-sm font-semibold text-fg">Furniture Library</span>
+                  <button class="text-fg-muted hover:text-fg text-base px-1" @click="showLibraryModal = false; librarySearch = ''">✕</button>
+                </div>
+                <!-- Search -->
+                <div class="px-5 pb-3 shrink-0">
+                  <div class="relative">
+                    <Icon icon="mdi:magnify" class="absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted text-sm pointer-events-none" />
+                    <input
+                      v-model="librarySearch"
+                      type="text"
+                      placeholder="Search presets…"
+                      class="w-full bg-bg text-fg text-xs rounded-lg pl-8 pr-3 py-2 border border-bg-elevated outline-none focus:border-accent/60 placeholder:text-fg-muted"
+                    />
+                  </div>
+                </div>
+                <!-- Grid -->
+                <div class="flex-1 overflow-y-auto px-5 pb-5">
+                  <div v-if="filteredLibrary.length" class="grid grid-cols-3 gap-4">
+                    <button
+                      v-for="preset in filteredLibrary"
+                      :key="preset.label"
+                      class="btn-touch flex flex-col gap-2 p-2 rounded-xl border border-bg-elevated hover:border-accent/50 hover:bg-bg-elevated transition-colors text-left"
+                      @click="onInsertFromLibrary(preset)"
+                    >
+                      <LibraryItemPreview :preset="preset" />
+                      <div class="flex items-center justify-between px-1">
+                        <span class="text-xs text-fg font-medium">{{ preset.label }}</span>
+                        <span class="text-[10px] text-fg-muted">{{ preset.items.length }} parts</span>
+                      </div>
+                    </button>
+                  </div>
+                  <p v-else class="text-xs text-fg-muted text-center py-10">No presets match "{{ librarySearch }}"</p>
+                </div>
+              </div>
+            </div>
+          </Teleport>
 
           <!-- Import modal -->
           <Teleport to="body">
@@ -1393,5 +1491,14 @@ function onImport() {
         </div>
       </div>
     </Transition>
+  </Teleport>
+
+  <!-- Isolated 3D group editor (fullscreen overlay via Teleport) -->
+  <Teleport to="body">
+    <FurnitureGroupViewer
+      v-if="viewerGroupId"
+      :group-id="viewerGroupId"
+      @close="viewerGroupId = null"
+    />
   </Teleport>
 </template>

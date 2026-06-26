@@ -1,0 +1,99 @@
+{
+  "label": "Toilet",
+  "x": 0,
+  "y": 0,
+  "z": 0,
+  "rotY": 0,
+  "rotZ": 0,
+  "followTheme": true,
+  "items": [
+    {
+      "label": "Dome",
+      "x": 0,
+      "y": 0.2,
+      "z": 0,
+      "w": 0.35,
+      "h": 0.45,
+      "d": 0.5,
+      "tintH": 0,
+      "tintV": 0.9,
+      "rotY": 0,
+      "shape": "sphere",
+      "radius": 0,
+      "radiusY": 0,
+      "sphereMode": "half",
+      "sphereStyle": "elliptical",
+      "sphereCutY": -0.14,
+      "rotZ": 180,
+      "segments": 30,
+      "color": "#ededed"
+    },
+    {
+      "label": "Tank",
+      "x": 0,
+      "y": 0.3,
+      "z": -0.2,
+      "w": 0.35,
+      "h": 0.6,
+      "d": 0.2,
+      "tintH": 0,
+      "tintV": 0.9,
+      "rotY": 0,
+      "shape": "ellipse",
+      "radius": 0,
+      "cornerRadii": [
+        0.03,
+        0.03,
+        0.15,
+        0.15
+      ],
+      "cornerRho": [
+        0.9,
+        1,
+        1,
+        1
+      ],
+      "radiusY": 0.01,
+      "color": "#ededed"
+    },
+    {
+      "label": "Foot",
+      "x": 0,
+      "y": 0.15,
+      "z": -0.1,
+      "w": 0.2,
+      "h": 0.3,
+      "d": 0.35,
+      "tintH": 0,
+      "tintV": 0.9,
+      "rotY": 0,
+      "shape": "rounded",
+      "radius": 0.25,
+      "cornerRadii": [
+        0,
+        0,
+        0.25,
+        0.25
+      ],
+      "radiusY": 0.01,
+      "color": "#ededed"
+    },
+    {
+      "label": "Lid",
+      "x": 0,
+      "y": 0.34,
+      "z": 0,
+      "w": 0.35,
+      "h": 0.02,
+      "d": 0.5,
+      "tintH": 0,
+      "tintV": 0.9,
+      "rotY": 0,
+      "shape": "ellipse",
+      "radius": 0,
+      "radiusY": 0.01,
+      "segments": 37,
+      "color": "#ededed"
+    }
+  ]
+}

@@ -5,9 +5,15 @@
 ## Features
 
 - Real-time device state via the Home Assistant WebSocket API
-- 3D floorplan view (procedural placeholder, glTF/GLB supported)
+- 3D floorplan view with procedural room geometry (walls, doors, windows, furniture)
 - Touch-tuned UI with a bottom-sheet device control panel
 - Pluggable device adapter system: lights, switches, climate, sensors, media players, covers, cameras
+- **2D floorplan editor** — drag vertices, add/remove rooms, set per-wall thickness, place doors & windows, hide individual walls in 3D
+- **Furniture library** — JSON-defined furniture items placed and scaled in the 3D scene
+- **Saved camera views** — save/lock a camera position; auto-returns after 30 s of inactivity
+- **PIN keypad authentication** — optional PIN lock for the editor toolbar (configurable via `AUTH_PIN` env var)
+- **WiFi QR code** — one-tap QR overlay to share the local network
+- **Custom theme palette editor** — accent hue picker, light/dark/auto mode, scene lighting controls, saveable custom palettes
 - Runs as an SSR Nitro server on the Pi with Chromium kiosk
 
 ## Quick start (dev)
@@ -51,8 +57,10 @@ The status indicator turns green when connected. Toggling a device should round-
 
 ## Configuration
 
-- `.env` — `HA_URL`, `HA_TOKEN`, `ALLOWED_LOCAL_PREFIXES`
+- `.env` — `HA_URL`, `HA_TOKEN`, `ALLOWED_LOCAL_PREFIXES`, `AUTH_PIN` (optional PIN to lock the toolbar), `WIFI_SSID` / `WIFI_PASSWORD` (optional, for the WiFi QR button)
 - `config/entities.json` — device placements (entity_id + 3D position)
+- `config/floorplan.json` — room polygons, wall thicknesses, door/window openings, hidden walls
+- `config/furnitureLibrary/` — furniture item JSON definitions (geometry, scale, materials)
 
 ## Adding a new device type
 
@@ -79,12 +87,35 @@ The Pi launches Chromium full-screen against `http://localhost:3000/?kiosk=1`.
 ## Architecture
 
 - `composables/useHomeAssistant.ts` — singleton WS connection, auto-reconnect.
+- `composables/useAuth.ts` — PIN auth state (session-scoped, 1-hour TTL).
+- `composables/useCameraView.ts` — saved/locked camera positions, 30 s auto-return.
+- `composables/useSceneColors.ts` — reactive scene colour helpers (accent, room tints).
+- `composables/useMarkerOverlay.ts` — device marker overlay state.
 - `stores/entities.ts` — reactive entity map (Pinia).
 - `stores/layout.ts` — device placements + selection + edit mode.
+- `stores/floorplan.ts` — rooms, wall thicknesses, door/window openings, hidden walls.
+- `stores/theme.ts` — theme mode (light/dark/auto), accent hue, custom palettes.
 - `utils/deviceRegistry.ts` — `DeviceAdapter` registry.
+- `utils/furnitureGeometry.ts` — furniture mesh geometry helpers.
 - `adapters/` — per-domain adapters.
 - `components/scene/` — TresJS 3D scene.
+  - `SceneFloorplan.vue` — procedural wall/floor/opening mesh generation.
+  - `SceneCameraController.vue` — TresJS orbit camera with save/lock/return logic.
+  - `SceneDeviceMarker.vue` — 3D device pin markers.
+  - `FurnitureGroupViewer.vue` — 3D furniture placement from library.
 - `components/controls/` — per-domain control UIs.
-- `components/ui/` — overlay components (status bar, bottom sheet).
+- `components/ui/` — overlay components.
+  - `FloorplanDotEditor.vue` — SVG 2D floorplan planner (drag vertices, place openings).
+  - `FloorplanEditorPanel.vue` — room/wall/opening property panel.
+  - `FurnitureItemForm.vue` — furniture item editor.
+  - `LibraryItemPreview.vue` — furniture library item preview.
+  - `SaveViewButton.vue` — save/lock camera view button.
+  - `WifiQrButton.vue` — WiFi QR code overlay.
+  - `PinKeypad.vue` — PIN entry keypad overlay.
+  - `ThemeToggle.vue` — light/dark/auto theme toggle.
+  - `StatusBar.vue`, `BottomSheet.vue`, `DeviceControlPanel.vue` — core UI chrome.
 - `server/api/ha/token.get.ts` — mints HA token to LAN clients only.
 - `server/api/layout.ts` — read/write `config/entities.json`.
+- `server/api/floorplan.ts` — read/write `config/floorplan.json`.
+- `server/api/wifi.get.ts` — serve WiFi credentials for QR generation.
+- `server/api/auth/verify.post.ts` — PIN verification endpoint.

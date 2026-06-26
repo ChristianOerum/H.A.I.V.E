@@ -103,6 +103,8 @@ export interface FloorplanFurnitureGroup {
   rotY: number
   /** Z-axis rotation of the whole group in degrees. */
   rotZ?: number
+  /** When true, all items in this group ignore their individual tint/color and render with the plain theme furniture color. */
+  followTheme?: boolean
 }
 
 export type FloorplanItemType = 'room' | 'furniture'
