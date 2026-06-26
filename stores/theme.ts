@@ -2,9 +2,12 @@ import { defineStore } from 'pinia'
 
 export type ThemeMode = 'light' | 'dark' | 'auto'
 
-const STORAGE_KEY = 'cove.theme'
-const COORD_KEY = 'cove.coords'
-const ACCENT_KEY = 'cove.accentHue'
+const STORAGE_KEY    = 'cove.theme'
+const COORD_KEY      = 'cove.coords'
+const ACCENT_KEY     = 'cove.accentHue'
+const DARK_VAR_KEY   = 'cove.darkVariant'
+const LIGHT_VAR_KEY  = 'cove.lightVariant'
+const CUSTOM_PALETTES_KEY = 'cove.customPalettes'
 
 // Default teal hue (≈174°)
 const DEFAULT_ACCENT_HUE = 174
@@ -66,6 +69,20 @@ export function hueToHexLight(hue: number): string {
     .split(' ')
     .map(Number)
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
+}
+
+/** Convert an RGB triplet string (e.g. "30 41 59") to a CSS hex color. */
+export function rgbTripletToHex(triplet: string): string {
+  const [r, g, b] = triplet.split(' ').map(Number)
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
+}
+
+/** Convert a CSS hex color to an RGB triplet string (e.g. "30 41 59"). */
+export function hexToRgbTriplet(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `${r} ${g} ${b}`
 }
 
 // Fallback coordinates (used until geolocation resolves)
@@ -155,6 +172,67 @@ const WALL_OPACITY_VALUES: Record<WallOpacityMode, number> = {
   ghost: 0.08,
 }
 
+// ── Theme palette variants ────────────────────────────────────────────────────
+
+export type DarkVariant  = 'slate' | 'deep' | 'neutral'
+export type LightVariant = 'warm'  | 'white' | 'beige'
+
+export interface Palette {
+  bg: string; bgPanel: string; bgElevated: string
+  fg: string; fgMuted: string
+  sceneClear: string; sceneFloor: string; sceneWall: string; sceneFurniture: string
+  sceneAmbient: string; sceneSun: string
+}
+
+export const DARK_PALETTES: Record<DarkVariant, Palette> = {
+  slate: {
+    bg: '30 41 59',  bgPanel: '51 65 85',   bgElevated: '71 85 105',
+    fg: '226 232 240', fgMuted: '148 163 184',
+    sceneClear: '#1e293b', sceneFloor: '#334155', sceneWall: '#475569', sceneFurniture: '#64748b',
+    sceneAmbient: '0.45', sceneSun: '1.1',
+  },
+  deep: {
+    bg: '7 11 22',   bgPanel: '17 24 39',   bgElevated: '30 41 59',
+    fg: '226 232 240', fgMuted: '148 163 184',
+    sceneClear: '#07070e', sceneFloor: '#111827', sceneWall: '#1e293b', sceneFurniture: '#334155',
+    sceneAmbient: '0.35', sceneSun: '1.2',
+  },
+  neutral: {
+    bg: '24 24 27',  bgPanel: '39 39 42',   bgElevated: '63 63 70',
+    fg: '228 228 231', fgMuted: '161 161 170',
+    sceneClear: '#18181b', sceneFloor: '#27272a', sceneWall: '#3f3f46', sceneFurniture: '#52525b',
+    sceneAmbient: '0.45', sceneSun: '1.0',
+  },
+}
+
+export const LIGHT_PALETTES: Record<LightVariant, Palette> = {
+  warm: {
+    bg: '248 245 238', bgPanel: '243 238 226', bgElevated: '229 222 207',
+    fg: '41 37 36', fgMuted: '120 113 108',
+    sceneClear: '#efe8d8', sceneFloor: '#e6dec7', sceneWall: '#c7bba0', sceneFurniture: '#a8987a',
+    sceneAmbient: '0.7', sceneSun: '0.9',
+  },
+  white: {
+    bg: '255 255 255', bgPanel: '245 245 247', bgElevated: '229 229 235',
+    fg: '24 24 27', fgMuted: '113 113 122',
+    sceneClear: '#f5f5f7', sceneFloor: '#e5e5eb', sceneWall: '#d4d4d8', sceneFurniture: '#a1a1aa',
+    sceneAmbient: '0.75', sceneSun: '0.85',
+  },
+  beige: {
+    bg: '237 228 210', bgPanel: '224 213 190', bgElevated: '207 193 166',
+    fg: '41 37 36', fgMuted: '120 113 108',
+    sceneClear: '#e0d4bb', sceneFloor: '#d0c2a0', sceneWall: '#bfaa80', sceneFurniture: '#a08f62',
+    sceneAmbient: '0.68', sceneSun: '0.92',
+  },
+}
+
+/** A user-created palette saved in localStorage. */
+export interface CustomPalette extends Palette {
+  id: string
+  name: string
+  type: 'dark' | 'light'
+}
+
 export const useThemeStore = defineStore('theme', {
   state: () => ({
     mode: 'auto' as ThemeMode,
@@ -173,10 +251,21 @@ export const useThemeStore = defineStore('theme', {
     brightness: 0,
     /** True while the 72-second day-cycle demo is running. */
     isSimulating: false,
+    /** Selected dark-mode palette variant (preset key or custom palette ID). */
+    darkVariant:      'slate' as string,
+    darkVariantSaved: 'slate' as string,
+    /** Selected light-mode palette variant (preset key or custom palette ID). */
+    lightVariant:      'warm' as string,
+    lightVariantSaved: 'warm' as string,
+    /** User-created custom palettes, persisted to localStorage. */
+    customPalettes: [] as CustomPalette[],
   }),
   getters: {
     wallOpacity: (state): number => WALL_OPACITY_VALUES[state.wallOpacityMode],
-    accentDirty: (state): boolean => state.accentHue !== state.accentHueSaved,
+    accentDirty:  (state): boolean => state.accentHue      !== state.accentHueSaved,
+    variantDirty: (state): boolean =>
+      state.darkVariant !== state.darkVariantSaved ||
+      state.lightVariant !== state.lightVariantSaved,
   },
   actions: {
     init() {
@@ -204,6 +293,18 @@ export const useThemeStore = defineStore('theme', {
           this.accentHueSaved = hue
         }
       }
+
+      // Restore palette variants (preset key or custom ID)
+      const savedDark = localStorage.getItem(DARK_VAR_KEY)
+      if (savedDark) { this.darkVariant = savedDark; this.darkVariantSaved = savedDark }
+      const savedLight = localStorage.getItem(LIGHT_VAR_KEY)
+      if (savedLight) { this.lightVariant = savedLight; this.lightVariantSaved = savedLight }
+
+      // Restore custom palettes
+      try {
+        const raw = localStorage.getItem(CUSTOM_PALETTES_KEY)
+        if (raw) this.customPalettes = JSON.parse(raw) as CustomPalette[]
+      } catch { /* ignore corrupt data */ }
 
       // Apply immediately with no transition so the page starts in the right state
       this._applyInstant()
@@ -247,6 +348,97 @@ export const useThemeStore = defineStore('theme', {
       this.accentHueSaved = this.accentHue
     },
 
+    /** Set dark palette variant and apply immediately. */
+    setDarkVariant(v: string) {
+      this.darkVariant = v
+      if (this.mode === 'auto') this._applyBrightness(this.brightness)
+      else if (this.isDark) this._setDark(true)
+    },
+
+    /** Set light palette variant and apply immediately. */
+    setLightVariant(v: string) {
+      this.lightVariant = v
+      if (this.mode === 'auto') this._applyBrightness(this.brightness)
+      else if (!this.isDark) this._setDark(false)
+    },
+
+    /** Persist the current palette variants to localStorage. */
+    savePaletteVariants() {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(DARK_VAR_KEY,  this.darkVariant)
+        localStorage.setItem(LIGHT_VAR_KEY, this.lightVariant)
+      }
+      this.darkVariantSaved  = this.darkVariant
+      this.lightVariantSaved = this.lightVariant
+    },
+
+    // ── Custom palette CRUD ──────────────────────────────────────────────────
+
+    _saveCustomPalettes() {
+      if (typeof window !== 'undefined')
+        localStorage.setItem(CUSTOM_PALETTES_KEY, JSON.stringify(this.customPalettes))
+    },
+
+    /** Resolve the active dark palette (preset or custom). */
+    _getDarkPalette(): Palette {
+      if (this.darkVariant in DARK_PALETTES) return DARK_PALETTES[this.darkVariant as DarkVariant]
+      return (this.customPalettes.find(p => p.id === this.darkVariant) ?? DARK_PALETTES.slate)
+    },
+
+    /** Resolve the active light palette (preset or custom). */
+    _getLightPalette(): Palette {
+      if (this.lightVariant in LIGHT_PALETTES) return LIGHT_PALETTES[this.lightVariant as LightVariant]
+      return (this.customPalettes.find(p => p.id === this.lightVariant) ?? LIGHT_PALETTES.warm)
+    },
+
+    /** Clone the current active palette for the given type and save as a new custom palette. */
+    addCustomPalette(type: 'dark' | 'light'): string {
+      const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
+      const base: Palette = type === 'dark' ? this._getDarkPalette() : this._getLightPalette()
+      const count = (this.customPalettes ?? []).filter(p => p.type === type).length + 1
+      const p: CustomPalette = { ...base, id, name: `Custom ${type} ${count}`, type }
+      this.customPalettes.push(p)
+      this._saveCustomPalettes()
+      // Auto-select the new palette
+      if (type === 'dark') this.setDarkVariant(id)
+      else this.setLightVariant(id)
+      return id
+    },
+
+    updateCustomPalette(id: string, updates: Partial<CustomPalette>) {
+      const idx = this.customPalettes.findIndex(p => p.id === id)
+      if (idx === -1) return
+      Object.assign(this.customPalettes[idx], updates)
+      this._saveCustomPalettes()
+      // Re-render if currently active
+      if (this.darkVariant === id || this.lightVariant === id) this.apply()
+    },
+
+    deleteCustomPalette(id: string) {
+      this.customPalettes = this.customPalettes.filter(p => p.id !== id)
+      this._saveCustomPalettes()
+      if (this.darkVariant === id)  this.setDarkVariant('slate')
+      if (this.lightVariant === id) this.setLightVariant('warm')
+    },
+
+    /** Export all custom palettes as a JSON string. */
+    exportCustomPalettes(): string {
+      return JSON.stringify({ version: 1, palettes: this.customPalettes }, null, 2)
+    },
+
+    /** Import palettes from a JSON string (merges by ID). */
+    importCustomPalettes(json: string) {
+      const data = JSON.parse(json)
+      const incoming: CustomPalette[] = data.palettes ?? (Array.isArray(data) ? data : [])
+      for (const p of incoming) {
+        if (!p.id || !p.name || !p.type) continue
+        const idx = this.customPalettes.findIndex(x => x.id === p.id)
+        if (idx !== -1) this.customPalettes[idx] = p
+        else this.customPalettes.push(p)
+      }
+      this._saveCustomPalettes()
+    },
+
     /** Write --accent and --accent-dim CSS vars for the given dark/light state. */
     _applyAccentVars(dark: boolean) {
       if (typeof document === 'undefined') return
@@ -259,6 +451,24 @@ export const useThemeStore = defineStore('theme', {
         root.style.setProperty('--accent',     hslToRgbTriplet(h, 70, 42))
         root.style.setProperty('--accent-dim', hslToRgbTriplet(h, 72, 35))
       }
+    },
+
+    /** Write all palette CSS vars (bg, fg, scene) for the given dark/light state. */
+    _applyPaletteVars(dark: boolean) {
+      if (typeof document === 'undefined') return
+      const root = document.documentElement
+      const p = dark ? this._getDarkPalette() : this._getLightPalette()
+      root.style.setProperty('--bg',          p.bg)
+      root.style.setProperty('--bg-panel',    p.bgPanel)
+      root.style.setProperty('--bg-elevated', p.bgElevated)
+      root.style.setProperty('--fg',          p.fg)
+      root.style.setProperty('--fg-muted',    p.fgMuted)
+      root.style.setProperty('--scene-clear',     `"${p.sceneClear}"`)
+      root.style.setProperty('--scene-floor',     `"${p.sceneFloor}"`)
+      root.style.setProperty('--scene-wall',      `"${p.sceneWall}"`)
+      root.style.setProperty('--scene-furniture', `"${p.sceneFurniture}"`)
+      root.style.setProperty('--scene-ambient',   `"${p.sceneAmbient}"`)
+      root.style.setProperty('--scene-sun',       `"${p.sceneSun}"`)
     },
 
     /**
@@ -274,32 +484,32 @@ export const useThemeStore = defineStore('theme', {
       // Remove binary dark/light classes — inline vars take over
       root.classList.remove('dark', 'light')
 
-      // RGB triplet vars
-      const triplets: [string, string, string][] = [
-        ['--bg',          '30 41 59',    '248 245 238'],
-        ['--bg-panel',    '51 65 85',    '243 238 226'],
-        ['--bg-elevated', '71 85 105',   '229 222 207'],
-        ['--fg',          '226 232 240', '41 37 36'],
-        ['--fg-muted',    '148 163 184', '120 113 108'],
-      ]
-      for (const [prop, dark, light] of triplets) {
-        root.style.setProperty(prop, lerpRgbTriplet(dark, light, t))
-      }
+      const dk = this._getDarkPalette()
+      const lk = this._getLightPalette()
+
+      // Main background — smooth linear sweep (ambient "sky" lighting effect only)
+      root.style.setProperty('--bg', lerpRgbTriplet(dk.bg, lk.bg, t))
+
+      // Panel backgrounds + text — wider window (t 0.35→0.65) with smoothstep easing
+      // so the dawn/dusk crossfade feels organic rather than linear.
+      const tUIRaw = Math.max(0, Math.min(1, (t - 0.35) / 0.3))
+      const tUI = tUIRaw * tUIRaw * (3 - 2 * tUIRaw) // smoothstep
+      root.style.setProperty('--bg-panel',    lerpRgbTriplet(dk.bgPanel,    lk.bgPanel,    tUI))
+      root.style.setProperty('--bg-elevated', lerpRgbTriplet(dk.bgElevated, lk.bgElevated, tUI))
+      root.style.setProperty('--fg',          lerpRgbTriplet(dk.fg,         lk.fg,         tUI))
+      root.style.setProperty('--fg-muted',    lerpRgbTriplet(dk.fgMuted,    lk.fgMuted,    tUI))
 
       // Hex scene colour vars (stored as quoted strings in CSS)
-      const hexVars: [string, string, string][] = [
-        ['--scene-clear',     '#1e293b', '#efe8d8'],
-        ['--scene-floor',     '#334155', '#e6dec7'],
-        ['--scene-wall',      '#475569', '#c7bba0'],
-        ['--scene-furniture', '#64748b', '#a8987a'],
-      ]
-      for (const [prop, dark, light] of hexVars) {
-        root.style.setProperty(prop, `"${lerpHex(dark, light, t)}"`)
-      }
+      root.style.setProperty('--scene-clear',     `"${lerpHex(dk.sceneClear,     lk.sceneClear,     t)}"`)
+      root.style.setProperty('--scene-floor',     `"${lerpHex(dk.sceneFloor,     lk.sceneFloor,     t)}"`)
+      root.style.setProperty('--scene-wall',      `"${lerpHex(dk.sceneWall,      lk.sceneWall,      t)}"`)
+      root.style.setProperty('--scene-furniture', `"${lerpHex(dk.sceneFurniture, lk.sceneFurniture, t)}"`)
 
-      // Numeric scene vars (quoted strings)
-      root.style.setProperty('--scene-ambient', `"${(0.45 + (0.7  - 0.45) * t).toFixed(3)}"`)
-      root.style.setProperty('--scene-sun',     `"${(1.1  + (0.9  - 1.1)  * t).toFixed(3)}"`)
+      // Numeric scene vars (quoted strings) — interpolate between palette endpoints
+      const dkAmb = parseFloat(dk.sceneAmbient), lkAmb = parseFloat(lk.sceneAmbient)
+      const dkSun = parseFloat(dk.sceneSun),     lkSun = parseFloat(lk.sceneSun)
+      root.style.setProperty('--scene-ambient', `"${(dkAmb + (lkAmb - dkAmb) * t).toFixed(3)}"`)
+      root.style.setProperty('--scene-sun',     `"${(dkSun + (lkSun - dkSun) * t).toFixed(3)}"`)
 
       // Accent — interpolate saturation and lightness between dark and light values
       const h = this.accentHue
@@ -350,8 +560,6 @@ export const useThemeStore = defineStore('theme', {
       this.isSimulating = true
       if (_simTimer) clearInterval(_simTimer)
       _simTimer = setInterval(() => {
-        // Abort if mode was changed to manual while sim was running
-        if (this.mode !== 'auto') { this.stopDaySimulation(); return }
         const elapsed = Date.now() - start
         const fraction = Math.min(elapsed / DURATION, 1)
         // fraction 0→1 maps to hour 0→24 (midnight → midnight via noon)
@@ -363,8 +571,8 @@ export const useThemeStore = defineStore('theme', {
     stopDaySimulation() {
       if (_simTimer) { clearInterval(_simTimer); _simTimer = null }
       this.isSimulating = false
-      // Restore current real-time brightness
-      if (this.mode === 'auto') this._applyBrightness(timeBrightness(new Date()))
+      // Restore correct state for current mode
+      this.apply()
     },
 
     /** Start sun-cycle mode: request geolocation and set up a per-minute tick. */
@@ -449,6 +657,7 @@ export const useThemeStore = defineStore('theme', {
         this.isDark = dark
         html.classList.toggle('dark', dark)
         html.classList.toggle('light', !dark)
+        this._applyPaletteVars(dark)
         this._applyAccentVars(dark)
 
         // Keep theme-color meta in sync

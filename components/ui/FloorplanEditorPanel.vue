@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Icon } from '@iconify/vue'
 import { getAdapter } from '~/utils/deviceRegistry'
-import { hexToHue, hueToHex, hueToHexLight } from '~/stores/theme'
+import { hexToHue, hueToHex, hueToHexLight, rgbTripletToHex, hexToRgbTriplet, DARK_PALETTES, LIGHT_PALETTES, type DarkVariant, type LightVariant, type CustomPalette } from '~/stores/theme'
 
 const fp = useFloorplanStore()
 const layout = useLayoutStore()
@@ -175,11 +175,14 @@ function onPositionChange(entityId: string, axis: 0 | 1 | 2, e: Event) {
 // ---- Save (floorplan or layout depending on active tab) ----
 const isDirty = computed(() =>
   tab.value === 'preferences'
-    ? theme.accentHue !== theme.accentHueSaved
+    ? theme.accentHue !== theme.accentHueSaved || theme.variantDirty
     : tab.value === 'devices' ? layout.dirty : fp.dirty,
 )
 function onSave() {
-  if (tab.value === 'preferences') theme.saveAccentHue()
+  if (tab.value === 'preferences') {
+    theme.saveAccentHue()
+    theme.savePaletteVariants()
+  }
   else if (tab.value === 'devices') layout.save()
   else fp.save()
 }
@@ -194,6 +197,46 @@ const ACCENT_PRESETS: { label: string; hue: number }[] = [
   { label: 'Amber',  hue:  38 },
   { label: 'Green',  hue: 142 },
 ]
+
+// ---- Custom palette editor ----
+const editingPaletteId = ref<string | null>(null)
+const showImport = ref(false)
+const importJson = ref('')
+
+function startEditPalette(id: string) {
+  editingPaletteId.value = editingPaletteId.value === id ? null : id
+}
+
+function copyExport() {
+  navigator.clipboard.writeText(theme.exportCustomPalettes())
+}
+
+function doImport() {
+  try {
+    theme.importCustomPalettes(importJson.value)
+    importJson.value = ''
+    showImport.value = false
+  } catch {
+    // invalid JSON — leave textarea open
+  }
+}
+
+function updatePaletteField(id: string, field: keyof CustomPalette, e: Event) {
+  theme.updateCustomPalette(id, { [field]: (e.target as HTMLInputElement).value })
+}
+
+function updatePaletteBgField(id: string, field: 'bg' | 'bgPanel' | 'bgElevated' | 'fg' | 'fgMuted', e: Event) {
+  theme.updateCustomPalette(id, { [field]: hexToRgbTriplet((e.target as HTMLInputElement).value) })
+}
+
+// Resolved palette objects for the preview cards (tracks variant changes reactively)
+function resolvePalette(key: string, type: 'dark' | 'light') {
+  if (type === 'dark')
+    return DARK_PALETTES[key as DarkVariant] ?? (theme.customPalettes ?? []).find(p => p.id === key) ?? DARK_PALETTES.slate
+  return LIGHT_PALETTES[key as LightVariant] ?? (theme.customPalettes ?? []).find(p => p.id === key) ?? LIGHT_PALETTES.warm
+}
+const darkPreview  = computed(() => resolvePalette(theme.darkVariant,  'dark'))
+const lightPreview = computed(() => resolvePalette(theme.lightVariant, 'light'))
 
 // Derived hex for the color-picker input (dark-mode accent swatch for hue)
 const accentPickerHex = computed(() => hueToHex(theme.accentHue))
@@ -1016,13 +1059,13 @@ function onImport() {
                   <!-- Dark mode card -->
                   <div
                     class="flex-1 rounded-lg p-3 flex flex-col gap-2"
-                    style="background:#1e293b"
+                    :style="{ background: `rgb(${darkPreview.bg})` }"
                   >
-                    <span class="text-[9px] uppercase tracking-wide" style="color:#94a3b8">Dark</span>
+                    <span class="text-[9px] uppercase tracking-wide" :style="{ color: `rgb(${darkPreview.fgMuted})` }">Dark</span>
                     <span class="text-sm font-semibold" :style="{ color: accentDarkHex }">Active text</span>
                     <span
                       class="self-start px-2 py-0.5 rounded text-xs font-medium"
-                      :style="{ background: accentDarkHex, color: '#1e293b' }"
+                      :style="{ background: accentDarkHex, color: `rgb(${darkPreview.bg})` }"
                     >Badge</span>
                     <span
                       class="self-start border rounded px-2 py-0.5 text-xs"
@@ -1032,13 +1075,13 @@ function onImport() {
                   <!-- Light mode card -->
                   <div
                     class="flex-1 rounded-lg p-3 flex flex-col gap-2"
-                    style="background:#f8f5ee"
+                    :style="{ background: `rgb(${lightPreview.bg})` }"
                   >
-                    <span class="text-[9px] uppercase tracking-wide" style="color:#78716c">Light</span>
+                    <span class="text-[9px] uppercase tracking-wide" :style="{ color: `rgb(${lightPreview.fgMuted})` }">Light</span>
                     <span class="text-sm font-semibold" :style="{ color: accentLightHex }">Active text</span>
                     <span
                       class="self-start px-2 py-0.5 rounded text-xs font-medium"
-                      :style="{ background: accentLightHex, color: '#f8f5ee' }"
+                      :style="{ background: accentLightHex, color: `rgb(${lightPreview.bg})` }"
                     >Badge</span>
                     <span
                       class="self-start border rounded px-2 py-0.5 text-xs"
@@ -1053,6 +1096,200 @@ function onImport() {
                 class="btn-touch text-xs text-fg-muted border border-bg-elevated rounded-lg w-full"
                 @click="theme.setAccentHue(174)"
               >Reset to default (Teal)</button>
+            </div>
+
+            <!-- Dark palette variants -->
+            <div class="flex flex-col gap-2">
+              <span class="text-[10px] text-fg-muted uppercase tracking-wide">Dark style</span>
+              <div class="flex gap-2">
+                <button
+                  v-for="(p, key) in DARK_PALETTES"
+                  :key="key"
+                  class="flex-1 flex flex-col items-center gap-1.5 py-2 rounded-lg border text-xs transition-colors"
+                  :class="theme.darkVariant === key
+                    ? 'border-accent/70 bg-accent/10 text-fg'
+                    : 'border-bg-elevated bg-bg text-fg-muted hover:text-fg'"
+                  @click="theme.setDarkVariant(key as DarkVariant)"
+                >
+                  <span
+                    class="w-6 h-6 rounded-full border border-white/10"
+                    :style="{ background: `rgb(${p.bg})` }"
+                  />
+                  <span class="capitalize">{{ key }}</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Light palette variants -->
+            <div class="flex flex-col gap-2">
+              <span class="text-[10px] text-fg-muted uppercase tracking-wide">Light style</span>
+              <div class="flex gap-2">
+                <button
+                  v-for="(p, key) in LIGHT_PALETTES"
+                  :key="key"
+                  class="flex-1 flex flex-col items-center gap-1.5 py-2 rounded-lg border text-xs transition-colors"
+                  :class="theme.lightVariant === key
+                    ? 'border-accent/70 bg-accent/10 text-fg'
+                    : 'border-bg-elevated bg-bg text-fg-muted hover:text-fg'"
+                  @click="theme.setLightVariant(key as LightVariant)"
+                >
+                  <span
+                    class="w-6 h-6 rounded-full border border-black/10"
+                    :style="{ background: `rgb(${p.bg})` }"
+                  />
+                  <span class="capitalize">{{ key }}</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- ── Custom palettes ──────────────────────────────── -->
+            <div class="flex flex-col gap-3 pt-1 border-t border-bg-elevated">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] text-fg-muted uppercase tracking-wide">Custom palettes</span>
+                <div class="flex gap-1.5">
+                  <button
+                    class="text-[10px] px-2 py-0.5 rounded border border-bg-elevated text-fg-muted hover:text-fg"
+                    :class="showImport ? 'text-accent border-accent/50' : ''"
+                    @click="showImport = !showImport; importJson = ''"
+                  >Import</button>
+                  <button
+                    v-if="theme.customPalettes?.length"
+                    class="text-[10px] px-2 py-0.5 rounded border border-bg-elevated text-fg-muted hover:text-fg"
+                    title="Copy all custom palettes as JSON"
+                    @click="copyExport"
+                  >Export</button>
+                </div>
+              </div>
+
+              <!-- Import textarea -->
+              <div v-if="showImport" class="flex flex-col gap-1.5">
+                <textarea
+                  v-model="importJson"
+                  rows="4"
+                  placeholder='Paste exported JSON here…'
+                  class="w-full text-[10px] font-mono rounded-lg border border-bg-elevated bg-bg p-2 text-fg resize-none focus:outline-none focus:border-accent/50"
+                />
+                <button
+                  class="btn-touch text-xs bg-accent/10 border border-accent/50 text-accent rounded-lg"
+                  :disabled="!importJson.trim()"
+                  @click="doImport"
+                >Apply Import</button>
+              </div>
+
+              <!-- Existing custom palettes -->
+              <div
+                v-for="p in (theme.customPalettes ?? [])"
+                :key="p.id"
+                class="flex flex-col rounded-lg border border-bg-elevated overflow-hidden"
+              >
+                <!-- Header row -->
+                <div class="flex items-center gap-2 px-2 py-1.5 bg-bg-panel">
+                  <span
+                    class="w-4 h-4 rounded-full shrink-0 border"
+                    :class="p.type === 'dark' ? 'border-white/10' : 'border-black/10'"
+                    :style="{ background: `rgb(${p.bg})` }"
+                  />
+                  <span
+                    class="flex-1 text-xs font-medium text-fg truncate"
+                    :class="(p.type === 'dark' ? theme.darkVariant : theme.lightVariant) === p.id ? 'text-accent' : ''"
+                  >{{ p.name }}</span>
+                  <span class="text-[9px] px-1.5 py-0.5 rounded font-medium"
+                    :class="p.type === 'dark' ? 'bg-slate-700/60 text-slate-300' : 'bg-amber-100/60 text-amber-700'">
+                    {{ p.type }}
+                  </span>
+                  <button
+                    class="text-[10px] text-fg-muted hover:text-accent px-1"
+                    :title="p.type === 'dark' ? 'Use as dark palette' : 'Use as light palette'"
+                    @click="p.type === 'dark' ? theme.setDarkVariant(p.id) : theme.setLightVariant(p.id)"
+                  >Use</button>
+                  <button
+                    class="text-[10px] text-fg-muted hover:text-fg px-1"
+                    @click="startEditPalette(p.id)"
+                  >{{ editingPaletteId === p.id ? 'Done' : 'Edit' }}</button>
+                  <button
+                    class="text-[10px] text-fg-muted hover:text-red-400 px-1"
+                    @click="theme.deleteCustomPalette(p.id)"
+                  >✕</button>
+                </div>
+
+                <!-- Edit form -->
+                <div v-if="editingPaletteId === p.id" class="flex flex-col gap-3 p-2 bg-bg">
+                  <!-- Name -->
+                  <label class="flex flex-col gap-1">
+                    <span class="text-[10px] text-fg-muted uppercase tracking-wide">Name</span>
+                    <input
+                      type="text"
+                      :value="p.name"
+                      class="text-xs rounded border border-bg-elevated bg-bg-panel px-2 py-1 text-fg focus:outline-none focus:border-accent/50"
+                      @change="updatePaletteField(p.id, 'name', $event)"
+                    />
+                  </label>
+
+                  <!-- UI Colors -->
+                  <div class="flex flex-col gap-1.5">
+                    <span class="text-[10px] text-fg-muted uppercase tracking-wide">UI Colors</span>
+                    <div class="grid grid-cols-2 gap-2">
+                      <label v-for="[field, label] in [['bg','Background'],['bgPanel','Panel'],['bgElevated','Elevated'],['fg','Text'],['fgMuted','Muted text']]" :key="field" class="flex items-center gap-1.5 text-[10px] text-fg-muted">
+                        <input
+                          type="color"
+                          class="h-6 w-6 rounded cursor-pointer border-0 p-0 shrink-0"
+                          :value="rgbTripletToHex(p[field as 'bg'])"
+                          @input="updatePaletteBgField(p.id, field as 'bg', $event)"
+                        />
+                        {{ label }}
+                      </label>
+                    </div>
+                  </div>
+
+                  <!-- Scene Colors -->
+                  <div class="flex flex-col gap-1.5">
+                    <span class="text-[10px] text-fg-muted uppercase tracking-wide">Scene Colors</span>
+                    <div class="grid grid-cols-2 gap-2">
+                      <label v-for="[field, label] in [['sceneClear','Clear'],['sceneFloor','Floor'],['sceneWall','Wall'],['sceneFurniture','Furniture']]" :key="field" class="flex items-center gap-1.5 text-[10px] text-fg-muted">
+                        <input
+                          type="color"
+                          class="h-6 w-6 rounded cursor-pointer border-0 p-0 shrink-0"
+                          :value="p[field as 'sceneClear']"
+                          @input="updatePaletteField(p.id, field as 'sceneClear', $event)"
+                        />
+                        {{ label }}
+                      </label>
+                    </div>
+                  </div>
+
+                  <!-- Scene Lighting -->
+                  <div class="flex gap-3">
+                    <label class="flex flex-col gap-1 flex-1">
+                      <span class="text-[10px] text-fg-muted uppercase tracking-wide">Ambient (0–1)</span>
+                      <input type="number" step="0.05" min="0" max="1"
+                        :value="p.sceneAmbient"
+                        class="text-xs rounded border border-bg-elevated bg-bg-panel px-2 py-1 text-fg focus:outline-none"
+                        @change="updatePaletteField(p.id, 'sceneAmbient', $event)"
+                      />
+                    </label>
+                    <label class="flex flex-col gap-1 flex-1">
+                      <span class="text-[10px] text-fg-muted uppercase tracking-wide">Sun (0–2)</span>
+                      <input type="number" step="0.05" min="0" max="2"
+                        :value="p.sceneSun"
+                        class="text-xs rounded border border-bg-elevated bg-bg-panel px-2 py-1 text-fg focus:outline-none"
+                        @change="updatePaletteField(p.id, 'sceneSun', $event)"
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Add new buttons -->
+              <div class="flex gap-2">
+                <button
+                  class="flex-1 btn-touch text-xs border border-dashed border-bg-elevated text-fg-muted hover:text-fg hover:border-fg-muted rounded-lg"
+                  @click="theme.addCustomPalette('dark')"
+                >+ Dark palette</button>
+                <button
+                  class="flex-1 btn-touch text-xs border border-dashed border-bg-elevated text-fg-muted hover:text-fg hover:border-fg-muted rounded-lg"
+                  @click="theme.addCustomPalette('light')"
+                >+ Light palette</button>
+              </div>
             </div>
           </div>
         </template>

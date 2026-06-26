@@ -60,6 +60,17 @@ const onKeypadClose = () => { showKeypad.value = false }
         <ThemeToggle />
       </div>
 
+      <!-- Day cycle demo — hidden; keep for future use -->
+      <button
+        v-if="false"
+        class="btn-touch !px-3 gap-2 text-sm"
+        :class="theme.isSimulating ? 'text-accent border border-accent/50' : 'text-fg-muted'"
+        :title="theme.isSimulating ? 'Stop day simulation' : 'Simulate 24h day cycle (72s)'"
+        @click="theme.startDaySimulation()"
+      >
+        <Icon :icon="theme.isSimulating ? 'mdi:stop-circle-outline' : 'mdi:weather-sunset'" width="18" height="18" />
+      </button>
+
       <!-- Walls — always visible, dimmed when locked -->
       <button
         class="btn-touch !px-3 gap-2 text-sm"
