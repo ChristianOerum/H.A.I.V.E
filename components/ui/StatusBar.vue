@@ -4,6 +4,8 @@ const entities = useEntitiesStore()
 const fp = useFloorplanStore()
 const theme = useThemeStore()
 const { isMock } = useHomeAssistant()
+const { unlocked, lock } = useAuth()
+
 const now = ref(new Date())
 let timer: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
@@ -29,6 +31,11 @@ const statusColor = computed(() => {
     default: return 'bg-fg-muted'
   }
 })
+
+const { public: { authEnabled } } = useRuntimeConfig()
+const showKeypad = ref(false)
+const openKeypad = () => { if (!unlocked.value) showKeypad.value = true }
+const onKeypadClose = () => { showKeypad.value = false }
 </script>
 
 <template>
@@ -47,23 +54,19 @@ const statusColor = computed(() => {
       <span v-if="entities.error" class="text-xs text-red-400">{{ entities.error }}</span>
     </div>
     <div class="flex items-center gap-3 pointer-events-auto">
-      <ThemeToggle />
-      <button
-        v-if="false"
-        class="btn-touch !px-3 gap-1.5 text-sm"
-        :class="theme.isSimulating
-          ? 'text-accent border border-accent/50 animate-pulse'
-          : 'text-fg-muted'"
-        :title="theme.isSimulating ? 'Stop day-cycle demo' : 'Demo: simulate 24 h in 72 s'"
-        @click="theme.isSimulating ? theme.stopDaySimulation() : theme.startDaySimulation()"
-      >
-        <Icon :icon="theme.isSimulating ? 'mdi:stop-circle-outline' : 'mdi:play-circle-outline'" width="18" height="18" />
-        <span class="hidden md:inline">{{ theme.isSimulating ? 'Stop' : 'Demo' }}</span>
-      </button>
-      <SaveViewButton />
+
+      <!-- ThemeToggle — always visible, dimmed when locked -->
+      <div :class="unlocked ? '' : 'opacity-30 pointer-events-none select-none'">
+        <ThemeToggle />
+      </div>
+
+      <!-- Walls — always visible, dimmed when locked -->
       <button
         class="btn-touch !px-3 gap-2 text-sm"
-        :class="theme.wallOpacityMode !== 'solid' ? 'text-accent border border-accent/50' : 'text-fg-muted'"
+        :class="[
+          theme.wallOpacityMode !== 'solid' ? 'text-accent border border-accent/50' : 'text-fg-muted',
+          unlocked ? '' : 'opacity-30 pointer-events-none select-none',
+        ]"
         :title="`Walls: ${theme.wallOpacityMode} — click to cycle`"
         @click="theme.cycleWallOpacity()"
       >
@@ -78,16 +81,36 @@ const statusColor = computed(() => {
         />
         <span class="hidden md:inline">Walls</span>
       </button>
+
+      <!-- SaveViewButton — hidden when locked -->
+      <SaveViewButton v-if="unlocked" />
+
+      <!-- Edit floorplan — hidden when locked -->
       <button
+        v-if="unlocked"
         class="btn-touch !px-3 text-sm"
         :class="fp.editMode ? 'text-accent border border-accent/50' : 'text-fg-muted'"
         @click="fp.toggleEditMode()"
         title="Edit floorplan"
       ><Icon icon="mdi:cog" width="18" height="18" /></button>
+
+      <!-- Lock / unlock button — only shown when auth is enabled, closest to time -->
+      <button
+        v-if="authEnabled"
+        class="btn-touch !px-3 text-sm transition-colors"
+        :class="unlocked ? 'text-accent border border-accent/50' : 'text-fg'"
+        :title="unlocked ? 'Lock controls' : 'Unlock controls'"
+        @click="unlocked ? lock() : openKeypad()"
+      >
+        <Icon :icon="unlocked ? 'mdi:lock-open-outline' : 'mdi:lock-outline'" width="18" height="18" />
+      </button>
+
       <div class="text-right">
         <div class="text-xl font-light leading-none">{{ time }}</div>
         <div class="text-xs text-fg-muted">{{ date }}</div>
       </div>
     </div>
   </div>
+
+  <PinKeypad v-if="showKeypad" @close="onKeypadClose" />
 </template>

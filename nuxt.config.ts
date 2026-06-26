@@ -53,11 +53,15 @@ export default defineNuxtConfig({
     wifiHidden: process.env.WIFI_HIDDEN === 'true',
     // Restrict /api/ha/* to clients on these CIDR-prefixed local networks.
     allowedLocalPrefixes: (process.env.ALLOWED_LOCAL_PREFIXES || '127.,192.168.,10.,172.').split(','),
+    // PIN required to unlock the toolbar controls. Set AUTH_PIN in .env.
+    authPin: process.env.AUTH_PIN || '',
     public: {
       // Public HA URL exposed so the browser can open a WS directly to HA.
       haUrl: process.env.HA_URL || 'http://homeassistant.local:8123',
       // True when HA_TOKEN is configured — lets the UI skip the setup hint.
       haConfigured: !!process.env.HA_TOKEN,
+      // True when AUTH_PIN is set — controls whether toolbar lock is enforced.
+      authEnabled: !!process.env.AUTH_PIN,
     },
   },
 
