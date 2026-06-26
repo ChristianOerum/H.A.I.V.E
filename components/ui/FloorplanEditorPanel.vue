@@ -137,7 +137,7 @@ function selectAddDevice(entityId: string) {
 
 // ---- Orphaned placements (entity no longer exists in active source) ----
 function isOrphan(entityId: string): boolean {
-  return entities.status === 'connected' && !entities.get(entityId)
+  return entities.status !== 'idle' && entities.status !== 'connecting' && !entities.get(entityId)
 }
 const orphanedPlacements = computed(() =>
   layout.placements.filter((p) => isOrphan(p.entity_id)),

@@ -31,7 +31,11 @@ export const useEntitiesStore = defineStore('entities', {
     },
     setStatus(s: ConnectionStatus) {
       this.status = s
-      if (s === 'connected') this.error = ''
+      if (s === 'connected') {
+        this.error = ''
+      } else {
+        this.entities = {}
+      }
     },
     setError(e: string) {
       this.error = e

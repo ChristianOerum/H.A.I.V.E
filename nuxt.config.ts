@@ -56,6 +56,8 @@ export default defineNuxtConfig({
     public: {
       // Public HA URL exposed so the browser can open a WS directly to HA.
       haUrl: process.env.HA_URL || 'http://homeassistant.local:8123',
+      // True when HA_TOKEN is configured — lets the UI skip the setup hint.
+      haConfigured: !!process.env.HA_TOKEN,
     },
   },
 

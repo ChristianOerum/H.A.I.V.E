@@ -4,6 +4,7 @@ const layout = useLayoutStore()
 const fp = useFloorplanStore()
 const theme = useThemeStore()
 const { start } = useHomeAssistant()
+const { public: { haConfigured } } = useRuntimeConfig()
 
 useHead({
   title: 'H.A.I.V.E.',
@@ -42,7 +43,7 @@ onMounted(async () => {
     <WifiQrButton v-if="!layout.selectedEntityId && !fp.editMode" />
 
     <div
-      v-if="entities.list.length === 0 && entities.status !== 'connecting'"
+      v-if="!haConfigured && entities.list.length === 0 && entities.status !== 'connecting'"
       class="absolute inset-0 flex items-center justify-center pointer-events-none"
     >
       <div class="text-center text-fg-muted max-w-md p-6 bg-bg-panel/80 rounded-2xl pointer-events-auto">

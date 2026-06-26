@@ -119,6 +119,24 @@
         1.2,
         0
       ]
+    },
+    {
+      "entity_id": "media_player.dagligstue",
+      "position": [
+        0,
+        1.2,
+        0
+      ]
+    },
+    {
+      "entity_id": "media_player.apple_tv_fixed",
+      "position": [
+        0.2,
+        1,
+        -0.5
+      ],
+      "lightSourceFurnitureId": "47bcc445-873c-47e9-9850-cd4bb4cdf261",
+      "color": "#fe8686"
     }
   ]
 }

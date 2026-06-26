@@ -42,8 +42,7 @@ const markers = computed<MarkerInfo[]>(() => {
       const pos = positions.value[p.entity_id]
       if (!pos?.visible) return null
       const entity = entities.get(p.entity_id)
-      // Hide markers for placements whose entity doesn't exist in the active source
-      if (!entity && entities.status === 'connected') return null
+      if (!entity) return null
       const adapter = entity ? getAdapter(entity) : undefined
       const visual = adapter && entity
         ? adapter.getDisplayState(entity)

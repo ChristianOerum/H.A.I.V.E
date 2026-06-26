@@ -27,11 +27,7 @@ function isMockRequested(): boolean {
 }
 
 async function fetchBootstrap(): Promise<HaBootstrap> {
-  try {
-    return await $fetch<HaBootstrap>('/api/ha/token')
-  } catch {
-    return { url: '', token: '', mock: true }
-  }
+  return await $fetch<HaBootstrap>('/api/ha/token')
 }
 
 /**
@@ -64,16 +60,12 @@ export function useHomeAssistant() {
     connectionPromise = (async () => {
       const boot = await fetchBootstrap()
       if (boot.mock || !boot.url || !boot.token) {
-        throw new Error('__USE_MOCK__')
+        throw new Error('HA token not configured')
       }
       const auth = createLongLivedTokenAuth(boot.url, boot.token)
       return await createConnection({ auth })
     })().catch((err) => {
       connectionPromise = null
-      if ((err as Error)?.message === '__USE_MOCK__') {
-        startMock('No HA token configured — using mock data')
-        return null as unknown as Connection
-      }
       if (err === ERR_HASS_HOST_REQUIRED) store.setError('HA host required')
       else if (err === ERR_INVALID_AUTH) store.setError('Invalid HA token')
       else store.setError(String((err as Error)?.message ?? err))
