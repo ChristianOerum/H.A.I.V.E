@@ -111,6 +111,14 @@
         -2.3
       ],
       "label": "Front Door Cam"
+    },
+    {
+      "entity_id": "light.sovevaerelse",
+      "position": [
+        1.1,
+        1.2,
+        0
+      ]
     }
   ]
 }

@@ -9,8 +9,12 @@ export interface FloorplanRoom {
   tintV: number
   /** Wall height in metres. Defaults to 2.4. */
   wallH?: number
-  /** Wall thickness in metres. Defaults to 0.15. */
+  /** Default wall thickness in metres for every edge. Defaults to 0.15. */
   wallThickness?: number
+  /** Per-edge wall thickness overrides, keyed by edge index. Falls back to `wallThickness`, then 0.15. */
+  wallThicknesses?: Record<number, number>
+  /** Edge indices whose wall is hidden in the 3D view (shown only as a 2D ghost in the planner). */
+  hiddenWalls?: number[]
   /** Optional explicit hex floor color override, e.g. '#c8b89a'. Overrides tint when set. */
   color?: string
 }
@@ -121,6 +125,8 @@ export const useFloorplanStore = defineStore('floorplan', {
     editorTab: 'rooms' as FloorplanEditorTab,
     selection: null as FloorplanSelection | null,
     selectedOpeningId: null as string | null,
+    /** Wall (room edge) currently highlighted from the editor panel, e.g. while editing its thickness. */
+    highlightedWall: null as { roomId: string; edgeIdx: number } | null,
     dirty: false,
     _history: [] as Snapshot[],
     _future: [] as Snapshot[],
@@ -242,7 +248,7 @@ export const useFloorplanStore = defineStore('floorplan', {
 
     toggleEditMode() {
       this.editMode = !this.editMode
-      if (!this.editMode) this.selection = null
+      if (!this.editMode) { this.selection = null; this.highlightedWall = null }
     },
 
     select(type: FloorplanItemType, id: string) {
@@ -284,6 +290,23 @@ export const useFloorplanStore = defineStore('floorplan', {
         if (o.edgeIdx > index) o.edgeIdx -= 1
         return true
       })
+      // Remap per-edge wall thickness overrides: drop the removed edge, shift the rest down.
+      if (r.wallThicknesses) {
+        const next: Record<number, number> = {}
+        for (const [k, v] of Object.entries(r.wallThicknesses)) {
+          const ki = Number(k)
+          if (ki === index) continue
+          next[ki > index ? ki - 1 : ki] = v
+        }
+        r.wallThicknesses = next
+      }
+      // Remap hidden-wall edge indices the same way.
+      if (r.hiddenWalls) {
+        const next = r.hiddenWalls
+          .filter((e) => e !== index)
+          .map((e) => (e > index ? e - 1 : e))
+        r.hiddenWalls = next.length ? next : undefined
+      }
       r.vertices.splice(index, 1)
       this.dirty = true
     },
@@ -291,6 +314,42 @@ export const useFloorplanStore = defineStore('floorplan', {
       const r = this.rooms.find((r) => r.id === roomId)
       if (!r || index >= r.vertices.length) return
       r.vertices[index] = value
+      this.dirty = true
+    },
+
+    /** Set the thickness of a single wall edge. Pass `undefined` to clear the override (revert to room default). */
+    setWallThickness(roomId: string, edgeIdx: number, value: number | undefined) {
+      const r = this.rooms.find((r) => r.id === roomId)
+      if (!r) return
+      this._push()
+      const map = { ...(r.wallThicknesses ?? {}) }
+      if (value === undefined || Number.isNaN(value)) delete map[edgeIdx]
+      else map[edgeIdx] = value
+      r.wallThicknesses = Object.keys(map).length ? map : undefined
+      this.dirty = true
+    },
+
+    /** Toggle whether a single wall edge is hidden in the 3D view (still drawn as a 2D ghost). */
+    toggleWallHidden(roomId: string, edgeIdx: number) {
+      const r = this.rooms.find((r) => r.id === roomId)
+      if (!r) return
+      this._push()
+      const set = new Set(r.hiddenWalls ?? [])
+      if (set.has(edgeIdx)) set.delete(edgeIdx)
+      else set.add(edgeIdx)
+      r.hiddenWalls = set.size ? [...set].sort((a, b) => a - b) : undefined
+      this.dirty = true
+    },
+
+    /** Explicitly set a wall edge's hidden state. */
+    setWallHidden(roomId: string, edgeIdx: number, hidden: boolean) {
+      const r = this.rooms.find((r) => r.id === roomId)
+      if (!r) return
+      this._push()
+      const set = new Set(r.hiddenWalls ?? [])
+      if (hidden) set.add(edgeIdx)
+      else set.delete(edgeIdx)
+      r.hiddenWalls = set.size ? [...set].sort((a, b) => a - b) : undefined
       this.dirty = true
     },
 

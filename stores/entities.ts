@@ -36,5 +36,14 @@ export const useEntitiesStore = defineStore('entities', {
     setError(e: string) {
       this.error = e
     },
+    patch(entityId: string, partial: Partial<HassEntity>) {
+      const existing = this.entities[entityId]
+      if (!existing) return
+      this.entities[entityId] = {
+        ...existing,
+        ...partial,
+        attributes: { ...existing.attributes, ...partial.attributes },
+      }
+    },
   },
 })

@@ -50,20 +50,45 @@ const placedEntities = computed(() =>
     .filter((x): x is { placement: typeof x.placement; entity: NonNullable<typeof x.entity> } => !!x.entity),
 )
 
-/** Resolve a furniture item's world-space position (top surface) given its ID. */
+/** Ray-casting point-in-polygon test (XZ plane). */
+function pointInRoom(x: number, z: number, verts: [number, number][]): boolean {
+  let inside = false
+  for (let i = 0, j = verts.length - 1; i < verts.length; j = i++) {
+    const [xi, zi] = verts[i], [xj, zj] = verts[j]
+    if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi)
+      inside = !inside
+  }
+  return inside
+}
+
+/** Resolve a furniture item's world-space position (light emission point) given its ID.
+ *  The Y is clamped to the containing room's wall height minus a small margin so
+ *  ceiling-mounted fixtures never escape above the wall tops and spill into adjacent rooms. */
 function furnitureWorldTop(furnitureId: string): [number, number, number] | undefined {
   const item = fp.furniture.find((f) => f.id === furnitureId)
   if (!item) return undefined
+  let wx: number, wy: number, wz: number
   if (item.groupId) {
     const group = fp.furnitureGroups.find((g) => g.id === item.groupId)
     if (group) {
       const rad = (group.rotY * Math.PI) / 180
       const rx = item.x * Math.cos(rad) - item.z * Math.sin(rad)
       const rz = item.x * Math.sin(rad) + item.z * Math.cos(rad)
-      return [group.x + rx, group.y + item.y + item.h / 2 + 0.15, group.z + rz]
+      wx = group.x + rx
+      wy = group.y + item.y + item.h / 2 + 0.15
+      wz = group.z + rz
+    } else {
+      wx = item.x; wy = item.y + item.h / 2 + 0.15; wz = item.z
     }
+  } else {
+    wx = item.x; wy = item.y + item.h / 2 + 0.15; wz = item.z
   }
-  return [item.x, item.y + item.h / 2 + 0.15, item.z]
+  // Clamp Y so ceiling-mounted lights never poke above wall tops.
+  // A lamp above wallH has direct line-of-sight over all walls into adjacent rooms.
+  const room = fp.rooms.find(r => pointInRoom(wx, wz, r.vertices))
+  const wallH = room?.wallH ?? 2
+  wy = Math.min(wy, wallH - 0.05)
+  return [wx, wy, wz]
 }
 /** World-space Y-rotation (degrees) of a furniture item, accounting for group. */
 function furnitureLightFacing(furnitureId: string): number {
@@ -106,7 +131,7 @@ function furnitureLightFacing(furnitureId: string): number {
       ref="sunLight"
       :position="[8, 14, 8]"
       :intensity="sceneColors.sun"
-      cast-shadow
+      :cast-shadow="true"
     />
 
     <SceneFloorplan />

@@ -24,7 +24,12 @@
       "tintH": 35,
       "tintV": 1,
       "wallH": 2,
-      "color": "#610000"
+      "color": "#610000",
+      "wallThicknesses": {
+        "0": 0.3,
+        "1": 0.3,
+        "2": 0.3
+      }
     },
     {
       "id": "r2",
@@ -49,7 +54,11 @@
       ],
       "tintH": -25,
       "tintV": 0.95,
-      "wallH": 2
+      "wallH": 2,
+      "wallThicknesses": {
+        "0": 0.3,
+        "3": 0.3
+      }
     },
     {
       "id": "r3",
@@ -74,7 +83,10 @@
       ],
       "tintH": 20,
       "tintV": 1.05,
-      "wallH": 2
+      "wallH": 2,
+      "wallThicknesses": {
+        "3": 0.3
+      }
     },
     {
       "id": "r5",
@@ -99,7 +111,12 @@
       ],
       "tintH": 35,
       "tintV": 1.1,
-      "wallH": 2
+      "wallH": 2,
+      "wallThicknesses": {
+        "1": 0.3,
+        "2": 0.3,
+        "3": 0.3
+      }
     },
     {
       "id": "e80fa4f7-3a46-44f7-903c-eff7d6c995f5",
@@ -157,7 +174,11 @@
       ],
       "tintH": 0,
       "tintV": 1,
-      "wallH": 0.5
+      "wallH": 0.5,
+      "hiddenWalls": [
+        4,
+        5
+      ]
     }
   ],
   "openings": [

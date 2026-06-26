@@ -76,16 +76,39 @@ function closestOnSeg(
   return [ax + t * dx, ay + t * dy, t]
 }
 
+function pointInPoly(verts: [number, number][], x: number, z: number): boolean {
+  let inside = false
+  const n = verts.length
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const [xi, zi] = verts[i]
+    const [xj, zj] = verts[j]
+    const intersect = (zi > z) !== (zj > z) &&
+      x < ((xj - xi) * (z - zi)) / (zj - zi) + xi
+    if (intersect) inside = !inside
+  }
+  return inside
+}
+
 function findNearestEdge(wx: number, wz: number) {
+  // Shared walls have a coincident edge in each adjacent room. To place the
+  // opening on the wall of the room the cursor is actually over, strongly
+  // prefer edges belonging to the room that contains the cursor point.
+  const containingRoom = fp.rooms.find(r => pointInPoly(r.vertices, wx, wz))
   let best: typeof hoveredEdge.value & { dist: number } | null = null
+  let bestScore = Infinity
   for (const room of fp.rooms) {
+    const isContaining = containingRoom?.id === room.id
     const n = room.vertices.length
     for (let i = 0; i < n; i++) {
       const [ax, az] = room.vertices[i]
       const [bx, bz] = room.vertices[(i + 1) % n]
       const [cx, cz, t] = closestOnSeg(wx, wz, ax, az, bx, bz)
       const d = Math.hypot(wx - cx, wz - cz)
-      if (d < EDGE_HIT && (!best || d < best.dist)) {
+      if (d >= EDGE_HIT) continue
+      // Containing-room edges win their own tier; ties fall back to distance.
+      const score = (isContaining ? 0 : 1000) + d
+      if (score < bestScore) {
+        bestScore = score
         best = { roomId: room.id, edgeIdx: i, t, cx, cz, dist: d }
       }
     }
@@ -214,7 +237,7 @@ function onVertexPointerDown(roomId: string, vtxIdx: number, e: PointerEvent) {
 }
 
 function onRoomPointerDown(roomId: string, e: PointerEvent) {
-  if (mode.value === 'draw') return // let click fall through to onBgPointerDown
+  if (mode.value === 'draw' || mode.value === 'door' || mode.value === 'window') return // let click fall through to onBgPointerDown
   e.stopPropagation()
   if (mode.value === 'erase') { fp.deleteRoom(roomId); return }
   if (mode.value === 'select') {
@@ -247,6 +270,7 @@ function onRoomPointerDown(roomId: string, e: PointerEvent) {
     const roomIds = multiSelectedRoomIds.value.size > 0
       ? [...multiSelectedRoomIds.value]
       : [roomId]
+    fp._push()
     dragRoomsState.value = {
       startWorld: [wx, wz],
       roomSnapshots: roomIds.map(id => ({
@@ -329,19 +353,22 @@ interface EdgeInfo {
   x1: number; z1: number; x2: number; z2: number
   openings: FloorplanOpening[]
   wallThickness: number
+  hidden: boolean
 }
 
 const allEdges = computed<EdgeInfo[]>(() => {
   const result: EdgeInfo[] = []
   for (const room of fp.rooms) {
     const n = room.vertices.length
+    const hiddenSet = new Set(room.hiddenWalls ?? [])
     for (let i = 0; i < n; i++) {
       const [x1, z1] = room.vertices[i]
       const [x2, z2] = room.vertices[(i + 1) % n]
       result.push({
         roomId: room.id, edgeIdx: i, x1, z1, x2, z2,
         openings: fp.openings.filter(o => o.roomId === room.id && o.edgeIdx === i),
-        wallThickness: room.wallThickness ?? 0.15,
+        wallThickness: room.wallThicknesses?.[i] ?? room.wallThickness ?? 0.15,
+        hidden: hiddenSet.has(i),
       })
     }
   }
@@ -386,9 +413,12 @@ function roomPolygonPoints(room: typeof fp.rooms[0]) {
 // ─── Wall band geometry ───────────────────────────────────────────────────────
 // Computes the inward-offset inner polygon using per-vertex mitre joins,
 // matching the same logic used by the 3D renderer.
+function roomEdgeDist(room: typeof fp.rooms[0], i: number): number {
+  return room.wallThicknesses?.[i] ?? room.wallThickness ?? 0.15
+}
+
 function roomInnerVerts(room: typeof fp.rooms[0]): [number, number][] {
   const verts = room.vertices
-  const dist = room.wallThickness ?? 0.15
   const n = verts.length
   if (n < 3) return verts
   // Detect winding: positive area = CCW (left normal = inward)
@@ -406,13 +436,22 @@ function roomInnerVerts(room: typeof fp.rooms[0]): [number, number][] {
     nrm.push([-dz / L * sign, dx / L * sign])   // inward normal
   }
   return verts.map((v, i) => {
-    const n1 = nrm[(i + n - 1) % n], n2 = nrm[i]
-    let mx = n1[0] + n2[0], mz = n1[1] + n2[1]
-    const ml = Math.hypot(mx, mz)
-    if (ml < 1e-6) return [v[0] + n1[0] * dist, v[1] + n1[1] * dist] as [number, number]
-    mx /= ml; mz /= ml
-    const cos = Math.max(0.25, mx * n1[0] + mz * n1[1])
-    return [v[0] + mx * dist / cos, v[1] + mz * dist / cos] as [number, number]
+    const ip = (i + n - 1) % n
+    const n1 = nrm[ip], n2 = nrm[i]
+    const d1 = roomEdgeDist(room, ip), d2 = roomEdgeDist(room, i)
+    const cosE = n1[0] * n2[0] + n1[1] * n2[1]
+    const denom = 1 - cosE * cosE
+    const ml = Math.hypot(n1[0] + n2[0], n1[1] + n2[1])
+    if (ml < 1e-6 || denom < 1e-6) return [v[0] + n2[0] * d2, v[1] + n2[1] * d2] as [number, number]
+    // Intersection of the two inner offset lines, each at its own edge thickness.
+    const alpha = (d1 - d2 * cosE) / denom
+    const beta = (d2 - d1 * cosE) / denom
+    let ux = alpha * n1[0] + beta * n2[0]
+    let uz = alpha * n1[1] + beta * n2[1]
+    const ulen = Math.hypot(ux, uz) || 1
+    const maxLen = Math.max(d1, d2) * 4
+    if (ulen > maxLen) { const f = maxLen / ulen; ux *= f; uz *= f }
+    return [v[0] + ux, v[1] + uz] as [number, number]
   })
 }
 
@@ -422,7 +461,6 @@ function wallBandPath(room: typeof fp.rooms[0]): string {
   const verts = room.vertices
   const inner = roomInnerVerts(room)
   const n = verts.length
-  const wallT = room.wallThickness ?? 0.15
   // Detect inward normal sign (same winding check as roomInnerVerts)
   let area = 0
   for (let i = 0; i < n; i++) {
@@ -439,6 +477,7 @@ function wallBandPath(room: typeof fp.rooms[0]): string {
   for (let i = 0; i < n; i++) {
     const ops = fp.openings.filter(o => o.roomId === room.id && o.edgeIdx === i)
     if (!ops.length) continue
+    const wallT = roomEdgeDist(room, i)
     const v0 = verts[i], v1 = verts[(i + 1) % n]
     const dx = v1[0] - v0[0], dz = v1[1] - v0[1]
     const len = Math.hypot(dx, dz) || 1
@@ -455,6 +494,24 @@ function wallBandPath(room: typeof fp.rooms[0]): string {
       const p3x = p0x + nx * wallT,    p3z = p0z + nz * wallT
       d += ` M${p0x},${p0z} L${p1x},${p1z} L${p2x},${p2z} L${p3x},${p3z}Z`
     }
+  }
+  // Hidden walls: punch the entire edge out of the solid band (drawn as a 2D ghost).
+  const hiddenSet = new Set(room.hiddenWalls ?? [])
+  for (let i = 0; i < n; i++) {
+    if (!hiddenSet.has(i)) continue
+    const wallT = roomEdgeDist(room, i)
+    const v0 = verts[i], v1 = verts[(i + 1) % n]
+    const dx = v1[0] - v0[0], dz = v1[1] - v0[1]
+    const len = Math.hypot(dx, dz) || 1
+    const ux = dx / len, uz = dz / len
+    const nx = -uz * sign, nz = ux * sign   // inward normal
+    // Slight overhang past each corner so the cut fully clears the band there.
+    const ox = ux * wallT, oz = uz * wallT
+    const a0x = v0[0] - ox,        a0z = v0[1] - oz
+    const a1x = v1[0] + ox,        a1z = v1[1] + oz
+    const a2x = a1x + nx * wallT,  a2z = a1z + nz * wallT
+    const a3x = a0x + nx * wallT,  a3z = a0z + nz * wallT
+    d += ` M${a0x},${a0z} L${a1x},${a1z} L${a2x},${a2z} L${a3x},${a3z}Z`
   }
   return d
 }
@@ -566,10 +623,66 @@ const furnitureFootprints = computed<FurnitureFootprint[]>(() => {
   })
 })
 
+// Build an SVG polygon (points string) covering only the room-interior side of a
+// single wall edge — offset inward by that edge's thickness so it never bleeds
+// across a shared boundary onto an adjacent room's wall.
+function highlightedWallPoints(): string | null {
+  const hw = fp.highlightedWall
+  if (!hw) return null
+  const room = fp.rooms.find(r => r.id === hw.roomId)
+  if (!room || room.vertices.length < 3) return null
+  const verts = room.vertices
+  const n = verts.length
+  if (hw.edgeIdx >= n) return null
+  const a = verts[hw.edgeIdx]
+  const b = verts[(hw.edgeIdx + 1) % n]
+  // Inward normal (matches roomInnerVerts winding convention).
+  let area = 0
+  for (let i = 0; i < n; i++) {
+    const p = verts[i], q = verts[(i + 1) % n]
+    area += p[0] * q[1] - q[0] * p[1]
+  }
+  const sign = area >= 0 ? 1 : -1
+  const dx = b[0] - a[0], dz = b[1] - a[1]
+  const L = Math.hypot(dx, dz) || 1
+  const nx = -dz / L * sign, nz = dx / L * sign   // inward normal
+  const t = room.wallThicknesses?.[hw.edgeIdx] ?? room.wallThickness ?? 0.15
+  const a2x = a[0] + nx * t, a2z = a[1] + nz * t
+  const b2x = b[0] + nx * t, b2z = b[1] + nz * t
+  return `${a[0]},${a[1]} ${b[0]},${b[1]} ${b2x},${b2z} ${a2x},${a2z}`
+}
+
+// Build an SVG polygon (points string) for a hidden wall's 2D ghost, offset
+// inward by that edge's thickness so it occupies the exact band region the solid
+// wall would otherwise fill (instead of a line centred on the polygon edge).
+function ghostWallPoints(edge: EdgeInfo): string | null {
+  const room = fp.rooms.find(r => r.id === edge.roomId)
+  if (!room || room.vertices.length < 3) return null
+  const verts = room.vertices
+  const n = verts.length
+  if (edge.edgeIdx >= n) return null
+  const a = verts[edge.edgeIdx]
+  const b = verts[(edge.edgeIdx + 1) % n]
+  let area = 0
+  for (let i = 0; i < n; i++) {
+    const p = verts[i], q = verts[(i + 1) % n]
+    area += p[0] * q[1] - q[0] * p[1]
+  }
+  const sign = area >= 0 ? 1 : -1
+  const dx = b[0] - a[0], dz = b[1] - a[1]
+  const L = Math.hypot(dx, dz) || 1
+  const nx = -dz / L * sign, nz = dx / L * sign   // inward normal
+  const t = room.wallThicknesses?.[edge.edgeIdx] ?? room.wallThickness ?? 0.15
+  const a2x = a[0] + nx * t, a2z = a[1] + nz * t
+  const b2x = b[0] + nx * t, b2z = b[1] + nz * t
+  return `${a[0]},${a[1]} ${b[0]},${b[1]} ${b2x},${b2z} ${a2x},${a2z}`
+}
+
 // ─── Colour helpers ───────────────────────────────────────────────────────────
 const ACCENT = '#5eead4'
 const WALL_STROKE = '#94a3b8'
 const WALL_STROKE_HOVERED = '#f59e0b'
+const WALL_STROKE_HIGHLIGHT = '#5eead4'
 
 function roomFill(id: string) {
   const isSelected = fp.selection?.id === id || multiSelectedRoomIds.value.has(id)
@@ -680,6 +793,21 @@ function roomStroke(id: string) {
             pointer-events="none"
           />
 
+          <!-- ── Ghost walls: hidden in 3D, shown as a dashed band here (aligned to where the solid wall would sit) ── -->
+          <polygon
+            v-for="edge in allEdges.filter(e => e.hidden && ghostWallPoints(e))"
+            :key="'ghost-' + edge.roomId + '-' + edge.edgeIdx"
+            :points="ghostWallPoints(edge)!"
+            :fill="WALL_STROKE"
+            fill-opacity="0.12"
+            :stroke="WALL_STROKE"
+            :stroke-width="0.03"
+            stroke-opacity="0.6"
+            stroke-dasharray="0.18,0.12"
+            stroke-linejoin="round"
+            pointer-events="none"
+          />
+
           <!-- ── Hovered edge highlight (thin overlay on the polygon boundary) ── -->
           <g
             v-for="edge in allEdges.filter(e => hoveredEdge?.roomId === e.roomId && hoveredEdge?.edgeIdx === e.edgeIdx)"
@@ -694,6 +822,16 @@ function roomStroke(id: string) {
               opacity="0.6"
             />
           </g>
+
+          <!-- ── Panel-highlighted wall (e.g. while editing its thickness) ── -->
+          <polygon
+            v-if="highlightedWallPoints()"
+            :points="highlightedWallPoints()!"
+            :fill="WALL_STROKE_HIGHLIGHT"
+            fill-opacity="0.85"
+            stroke="none"
+            pointer-events="none"
+          />
 
           <!-- ── Opening markers ── -->
           <g v-for="edge in allEdges" :key="'op-' + edge.roomId + '-' + edge.edgeIdx">

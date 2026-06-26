@@ -28,10 +28,12 @@ const effectiveLightPos = computed(() => props.lightPosition ?? props.placement.
 const lightRef = shallowRef<PointLight | null>(null)
 watch(lightRef, (light) => {
   if (!light) return
-  light.shadow.mapSize.width  = 512
-  light.shadow.mapSize.height = 512
+  light.shadow.mapSize.width  = 1024
+  light.shadow.mapSize.height = 1024
   light.shadow.camera.near    = 0.1
   light.shadow.camera.far     = 8
+  light.shadow.bias           = -0.0005
+  light.shadow.normalBias     = 0.02
 })
 
 // ── TV spot light — directional emission in furniture facing direction ────────
@@ -41,6 +43,18 @@ const tvSpotRef = shallowRef<SpotLight | null>(null)
 
 onMounted(() => scene.value.add(tvTarget))
 onUnmounted(() => scene.value.remove(tvTarget))
+
+watch(tvSpotRef, (spot) => {
+  if (!spot) return
+  // Shadow config matches the lamp point light: walls block the beam so light
+  // can't bleed into neighbouring rooms.
+  spot.shadow.mapSize.width  = 512
+  spot.shadow.mapSize.height = 512
+  spot.shadow.camera.near    = 0.1
+  spot.shadow.camera.far     = 8
+  spot.shadow.bias           = -0.0005
+  spot.shadow.normalBias     = 0.02
+})
 
 watch([tvSpotRef, effectiveLightPos, () => props.lightFacing], () => {
   const spot = tvSpotRef.value
@@ -68,7 +82,7 @@ watch([tvSpotRef, effectiveLightPos, () => props.lightFacing], () => {
       :intensity="visual.intensity * 80"
       :distance="8"
       :decay="2"
-      cast-shadow
+      :cast-shadow="true"
     />
     <!-- Directional spot light for TV / media player — emits in furniture facing direction -->
     <TresSpotLight
@@ -80,6 +94,7 @@ watch([tvSpotRef, effectiveLightPos, () => props.lightFacing], () => {
       :penumbra="0.5"
       :distance="8"
       :decay="1.5"
+      :cast-shadow="true"
     />
 
   </TresGroup>

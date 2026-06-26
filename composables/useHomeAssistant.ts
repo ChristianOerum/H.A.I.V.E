@@ -9,7 +9,7 @@ import {
   type HassEntities,
   type HassEntity,
 } from 'home-assistant-js-websocket'
-import { mockSubscribe, mockCallService, startMockSimulation } from '~/utils/mockHomeAssistant'
+import { mockSubscribe, mockCallService, startMockSimulation, stopMockSimulation } from '~/utils/mockHomeAssistant'
 
 let connectionPromise: Promise<Connection> | null = null
 let unsubEntities: (() => void) | null = null
@@ -84,6 +84,10 @@ export function useHomeAssistant() {
 
     const conn = await connectionPromise
     if (!conn || mockActive) return
+
+    // Real HA is now live — tear down any lingering mock state
+    stopMockSimulation()
+    mockActive = false
 
     conn.addEventListener('ready', () => store.setStatus('connected'))
     conn.addEventListener('disconnected', () => store.setStatus('disconnected'))

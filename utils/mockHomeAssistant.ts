@@ -150,10 +150,12 @@ export async function mockCallService(
   }
 }
 
-/** Optional: run a small simulation so the UI feels alive in mock mode. */
+let simulationInterval: ReturnType<typeof setInterval> | null = null
+
+/** Start the mock simulation. Safe to call multiple times — only one interval runs at a time. */
 export function startMockSimulation() {
-  // Drift temperature sensors slightly every 5s
-  setInterval(() => {
+  if (simulationInterval !== null) return
+  simulationInterval = setInterval(() => {
     for (const id of ['sensor.living_room_temperature', 'sensor.outdoor_temperature']) {
       const e = state[id]
       if (!e) continue
@@ -162,4 +164,13 @@ export function startMockSimulation() {
       update(id, { state: next })
     }
   }, 5000)
+}
+
+/** Stop the mock simulation and clear all listeners. Called when real HA takes over. */
+export function stopMockSimulation() {
+  if (simulationInterval !== null) {
+    clearInterval(simulationInterval)
+    simulationInterval = null
+  }
+  listeners.clear()
 }

@@ -16,6 +16,17 @@ const selectedOpeningId = ref<string | null>(null)
 const selectedDeviceId = ref<string | null>(null)
 const newDeviceEntityId = ref('')
 
+/** Locally-tracked set of expanded group IDs — resets to empty when the furniture tab opens. */
+const expandedGroupIds = ref(new Set<string>())
+watch(() => fp.editorTab, (t) => { if (t === 'furniture') expandedGroupIds.value = new Set() })
+
+function toggleGroup(id: string) {
+  const s = new Set(expandedGroupIds.value)
+  if (s.has(id)) s.delete(id)
+  else s.add(id)
+  expandedGroupIds.value = s
+}
+
 function selectItem(type: 'room' | 'furniture', id: string) {
   if (fp.selection?.id === id) fp.deselect()
   else fp.select(type, id)
@@ -27,6 +38,14 @@ function toggleOpening(id: string) {
 
 function numVal(e: Event) {
   return +(e.target as HTMLInputElement).value
+}
+
+/** Length in metres of edge `i` of a room (vertex i → vertex i+1). */
+function edgeLength(room: { vertices: [number, number][] }, i: number): number {
+  const n = room.vertices.length
+  const a = room.vertices[i]
+  const b = room.vertices[(i + 1) % n]
+  return Math.hypot(b[0] - a[0], b[1] - a[1])
 }
 
 function onKeyDown(e: KeyboardEvent) {
@@ -72,11 +91,77 @@ const availableEntities = computed(() =>
     .sort((a, b) => a.entity_id.localeCompare(b.entity_id)),
 )
 
+// ---- Device search (placed list) ----
+const deviceSearch = ref('')
+const filteredPlacements = computed(() => {
+  const q = deviceSearch.value.toLowerCase().trim()
+  return layout.placements.filter((p) => {
+    if (isOrphan(p.entity_id)) return false
+    if (!q) return true
+    const label = entityLabel(p.entity_id).toLowerCase()
+    return label.includes(q) || p.entity_id.toLowerCase().includes(q)
+  })
+})
+
+// ---- Add-device modal ----
+const addDeviceSearch = ref('')
+const showAddDeviceModal = ref(false)
+const addDeviceModalInput = ref<HTMLInputElement | null>(null)
+
+watch(showAddDeviceModal, async (v) => {
+  if (v) {
+    addDeviceSearch.value = ''
+    await nextTick()
+    addDeviceModalInput.value?.focus()
+  }
+})
+
+const filteredAvailableEntities = computed(() => {
+  const q = addDeviceSearch.value.toLowerCase().trim()
+  const base = availableEntities.value
+  if (!q) return base.slice(0, 80)
+  return base
+    .filter((e) => {
+      const name = ((e.attributes?.friendly_name as string | undefined) ?? '').toLowerCase()
+      return name.includes(q) || e.entity_id.toLowerCase().includes(q)
+    })
+    .slice(0, 80)
+})
+
+function selectAddDevice(entityId: string) {
+  showAddDeviceModal.value = false
+  addDeviceSearch.value = ''
+  layout.addPlacement(entityId)
+  selectedDeviceId.value = entityId
+}
+
+// ---- Orphaned placements (entity no longer exists in active source) ----
+function isOrphan(entityId: string): boolean {
+  return entities.status === 'connected' && !entities.get(entityId)
+}
+const orphanedPlacements = computed(() =>
+  layout.placements.filter((p) => isOrphan(p.entity_id)),
+)
+function removeOrphans() {
+  for (const p of orphanedPlacements.value) {
+    layout.deletePlacement(p.entity_id)
+  }
+  selectedDeviceId.value = null
+}
+
+function entityDomain(entityId: string): string {
+  return entityId.split('.')[0]
+}
+function entityState(entityId: string): string {
+  return entities.get(entityId)?.state ?? ''
+}
+
 function onAddDevice() {
   if (!newDeviceEntityId.value) return
   layout.addPlacement(newDeviceEntityId.value)
   selectedDeviceId.value = newDeviceEntityId.value
   newDeviceEntityId.value = ''
+  addDeviceSearch.value = ''
 }
 
 function onPositionChange(entityId: string, axis: 0 | 1 | 2, e: Event) {
@@ -330,7 +415,7 @@ function onImport() {
                   />
                 </label>
                 <label class="flex flex-col gap-1">
-                  <span class="text-[10px] text-fg-muted uppercase tracking-wide">Wall thickness (m)</span>
+                  <span class="text-[10px] text-fg-muted uppercase tracking-wide">Default wall thickness (m)</span>
                   <input type="number" step="0.01" min="0.05" max="1"
                     class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-full"
                     :value="room.wallThickness ?? 0.15"
@@ -361,6 +446,68 @@ function onImport() {
                     >✕</button>
                   </div>
                 </label>
+              </div>
+              <!-- Per-wall thickness overrides -->
+              <div v-if="room.vertices.length >= 3">
+                <div class="flex items-center justify-between">
+                  <span class="text-[10px] text-fg-muted uppercase tracking-wide">Per-wall thickness (m)</span>
+                  <button
+                    v-if="room.wallThicknesses && Object.keys(room.wallThicknesses).length"
+                    class="text-[10px] text-fg-muted hover:text-fg px-1"
+                    title="Reset all walls to the room default"
+                    @click.stop="fp.updateRoom(room.id, { wallThicknesses: undefined })"
+                  >reset all</button>
+                </div>
+                <div class="mt-1 grid grid-cols-2 gap-1.5">
+                  <label
+                    v-for="(_v, i) in room.vertices"
+                    :key="'wt-' + room.id + '-' + i"
+                    class="flex items-center gap-1.5 rounded bg-bg px-2 py-1"
+                    :title="'Edge ' + i + ' · ' + edgeLength(room, i).toFixed(2) + 'm long'"
+                    @mouseenter="fp.highlightedWall = { roomId: room.id, edgeIdx: i }"
+                    @mouseleave="fp.highlightedWall = null"
+                  >
+                    <span class="text-[10px] text-fg-muted shrink-0 w-9">Wall {{ i }}</span>
+                    <input type="number" step="0.01" min="0.05" max="1"
+                      class="bg-bg-elevated text-fg text-xs rounded px-1.5 py-1 border border-bg w-full"
+                      :class="room.wallThicknesses?.[i] !== undefined ? 'border-accent/50 text-accent' : ''"
+                      :placeholder="String(room.wallThickness ?? 0.15)"
+                      :value="room.wallThicknesses?.[i] ?? ''"
+                      @focus="fp.highlightedWall = { roomId: room.id, edgeIdx: i }"
+                      @blur="fp.highlightedWall = null"
+                      @change="fp.setWallThickness(room.id, i, ($event.target as HTMLInputElement).value === '' ? undefined : numVal($event))"
+                    />
+                  </label>
+                </div>
+              </div>
+              <!-- Hide walls in 3D (shown as a 2D ghost) -->
+              <div v-if="room.vertices.length >= 3">
+                <div class="flex items-center justify-between">
+                  <span class="text-[10px] text-fg-muted uppercase tracking-wide">Hide walls in 3D</span>
+                  <button
+                    v-if="room.hiddenWalls && room.hiddenWalls.length"
+                    class="text-[10px] text-fg-muted hover:text-fg px-1"
+                    title="Show all walls in 3D again"
+                    @click.stop="fp.updateRoom(room.id, { hiddenWalls: undefined })"
+                  >show all</button>
+                </div>
+                <div class="mt-1 grid grid-cols-2 gap-1.5">
+                  <label
+                    v-for="(_v, i) in room.vertices"
+                    :key="'hw-' + room.id + '-' + i"
+                    class="flex items-center gap-1.5 rounded bg-bg px-2 py-1 cursor-pointer"
+                    :class="room.hiddenWalls?.includes(i) ? 'text-accent' : 'text-fg-muted'"
+                    :title="'Edge ' + i + ' · ' + edgeLength(room, i).toFixed(2) + 'm long'"
+                    @mouseenter="fp.highlightedWall = { roomId: room.id, edgeIdx: i }"
+                    @mouseleave="fp.highlightedWall = null"
+                  >
+                    <input type="checkbox" class="accent-accent shrink-0"
+                      :checked="room.hiddenWalls?.includes(i) ?? false"
+                      @change="fp.setWallHidden(room.id, i, ($event.target as HTMLInputElement).checked)"
+                    />
+                    <span class="text-[10px]">Wall {{ i }}</span>
+                  </label>
+                </div>
               </div>
               <!-- Openings list for this room -->
               <div v-if="fp.openings.filter(o => o.roomId === room.id).length > 0">
@@ -425,14 +572,14 @@ function onImport() {
           <div
             v-for="group in fp.furnitureGroups"
             :key="group.id"
-            class="rounded-lg border border-bg-elevated overflow-hidden"
+            class="shrink-0 rounded-lg border border-bg-elevated overflow-hidden"
           >
             <!-- Group header -->
             <div
               class="flex items-center gap-2 px-3 py-2 bg-bg-elevated cursor-pointer select-none"
-              @click="fp.toggleGroupCollapsed(group.id)"
+              @click="toggleGroup(group.id)"
             >
-              <span class="text-fg-muted text-xs shrink-0">{{ group.collapsed ? '▶' : '▼' }}</span>
+              <span class="text-fg-muted text-xs shrink-0">{{ expandedGroupIds.has(group.id) ? '▼' : '▶' }}</span>
               <input
                 class="bg-transparent text-sm font-medium text-fg flex-1 min-w-0 outline-none focus:text-accent"
                 :value="group.label"
@@ -445,7 +592,7 @@ function onImport() {
                 @click.stop="fp.addFurniture(group.id)"
               >+</button>
               <button
-                v-if="!group.collapsed"
+                v-if="expandedGroupIds.has(group.id)"
                 class="shrink-0 p-1 rounded transition-colors"
                 :class="copiedGroupId === group.id ? 'text-green-400' : 'text-fg-muted hover:text-accent'"
                 :title="copiedGroupId === group.id ? 'Copied!' : 'Export group to clipboard'"
@@ -461,7 +608,7 @@ function onImport() {
             </div>
 
             <!-- Group children -->
-            <div v-if="!group.collapsed" class="flex flex-col gap-px bg-bg">
+            <div v-if="expandedGroupIds.has(group.id)" class="flex flex-col gap-px bg-bg">
               <!-- Group position controls -->
               <div class="px-3 py-2 bg-bg border-b border-bg-elevated" @click.stop>
                 <span class="text-[10px] text-fg-muted uppercase tracking-wide block mb-1.5">Group position</span>
@@ -519,8 +666,8 @@ function onImport() {
                   </label>
                 </div>
               </div>
-              <!-- Items list (scrollable) -->
-              <div class="overflow-y-auto max-h-72">
+              <!-- Items list -->
+              <div>
                 <div
                   v-for="item in fp.furniture.filter(f => f.groupId === group.id)"
                   :key="item.id"
@@ -548,7 +695,7 @@ function onImport() {
           <div
             v-for="item in fp.furniture.filter(f => !f.groupId)"
             :key="item.id"
-            class="rounded-lg px-3 py-2 cursor-pointer transition-colors"
+            class="shrink-0 rounded-lg px-3 py-2 cursor-pointer transition-colors"
             :class="fp.selection?.id === item.id ? 'bg-accent/15 border border-accent/50' : 'bg-bg-elevated'"
             @click="selectItem('furniture', item.id)"
           >
@@ -564,7 +711,7 @@ function onImport() {
           </div>
 
           <!-- Action buttons -->
-          <div class="flex gap-2 mt-1">
+          <div class="shrink-0 flex gap-2 mt-1">
             <button
               class="btn-touch text-xs text-accent border border-accent/40 rounded-lg flex-1"
               @click="fp.addFurnitureGroup()"
@@ -654,18 +801,54 @@ function onImport() {
             <option value="mdi:radiator" />
           </datalist>
 
+          <!-- Placed devices: search bar -->
+          <div class="relative mb-1">
+            <Icon icon="mdi:magnify" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-muted pointer-events-none" width="14" height="14" />
+            <input
+              v-model="deviceSearch"
+              type="search"
+              placeholder="Filter placed devices…"
+              class="bg-bg text-fg text-xs rounded-lg pl-7 pr-3 py-1.5 border border-bg-elevated w-full placeholder:text-fg-muted/60 focus:border-accent/60 focus:outline-none transition-colors"
+            />
+          </div>
+
+          <!-- Empty state when search yields nothing -->
+          <p v-if="filteredPlacements.length === 0 && layout.placements.length > 0" class="text-[11px] text-fg-muted text-center py-3">
+            No matches for "{{ deviceSearch }}"
+          </p>
+
           <!-- Placed devices list -->
           <div
-            v-for="p in layout.placements"
+            v-for="p in filteredPlacements"
             :key="p.entity_id"
             class="rounded-lg px-3 py-2 cursor-pointer transition-colors"
-            :class="selectedDeviceId === p.entity_id ? 'bg-accent/15 border border-accent/50' : 'bg-bg-elevated'"
+            :class="selectedDeviceId === p.entity_id ? 'bg-accent/15 border border-accent/50' : 'bg-bg-elevated hover:bg-bg-elevated/80'"
             @click="selectedDeviceId = selectedDeviceId === p.entity_id ? null : p.entity_id"
           >
             <div class="flex items-center justify-between gap-2">
               <div class="flex items-center gap-2 min-w-0">
                 <Icon :icon="p.icon || getAutoIcon(p.entity_id)" class="text-base shrink-0 text-fg-muted" />
-                <span class="text-sm text-fg truncate">{{ entityLabel(p.entity_id) }}</span>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-1.5 flex-wrap">
+                    <span class="text-sm text-fg truncate">{{ entityLabel(p.entity_id) }}</span>
+                    <span class="text-[9px] px-1.5 py-0.5 rounded-full bg-bg border border-bg-elevated text-fg-muted font-mono shrink-0">{{ entityDomain(p.entity_id) }}</span>
+                    <span
+                      v-if="isOrphan(p.entity_id)"
+                      class="text-[9px] px-1.5 py-0.5 rounded-full bg-yellow-500/20 border border-yellow-500/30 text-yellow-300 shrink-0"
+                      title="Entity not found in current data source"
+                    >orphaned</span>
+                  </div>
+                  <div class="flex items-center gap-1.5 mt-0.5">
+                    <span class="text-[10px] text-fg-muted font-mono truncate">{{ p.entity_id }}</span>
+                    <span
+                      v-if="entityState(p.entity_id)"
+                      class="text-[9px] px-1.5 py-0 rounded-full shrink-0 font-medium"
+                      :class="['on','open','playing','unlocked','true'].includes(entityState(p.entity_id))
+                        ? 'bg-accent/20 text-accent'
+                        : 'bg-bg border border-bg-elevated text-fg-muted'"
+                    >{{ entityState(p.entity_id) }}</span>
+                  </div>
+                </div>
               </div>
               <button
                 class="text-xs text-red-400 px-2 py-1 rounded shrink-0 hover:bg-red-500/20"
@@ -775,24 +958,14 @@ function onImport() {
           </div>
 
           <!-- Add device section -->
-          <div class="mt-2 flex flex-col gap-2 border-t border-bg-elevated pt-2">
-            <span class="text-[10px] text-fg-muted uppercase tracking-wide px-1">Add Device</span>
-            <select
-              v-model="newDeviceEntityId"
-              class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-full"
-            >
-              <option value="">— select entity —</option>
-              <option
-                v-for="e in availableEntities"
-                :key="e.entity_id"
-                :value="e.entity_id"
-              >{{ (e.attributes?.friendly_name as string | undefined) ?? e.entity_id }}</option>
-            </select>
+          <div class="mt-2 border-t border-bg-elevated pt-3 flex flex-col gap-2">
             <button
-              class="btn-touch text-xs text-accent border border-accent/40 rounded-lg w-full disabled:opacity-40 disabled:cursor-not-allowed"
-              :disabled="!newDeviceEntityId"
-              @click="onAddDevice"
-            >+ Place Device</button>
+              class="btn-touch text-sm text-accent border border-accent/40 rounded-lg w-full flex items-center justify-center gap-2"
+              @click="showAddDeviceModal = true"
+            >
+              <Icon icon="mdi:plus" width="16" height="16" />
+              Add Device
+            </button>
           </div>
         </template>
 
@@ -899,4 +1072,89 @@ function onImport() {
       </div>
     </div>
   </Transition>
+
+  <!-- Add Device Modal -->
+  <Teleport to="body">
+    <Transition
+      enter-active-class="transition duration-150 ease-out"
+      enter-from-class="opacity-0"
+      enter-to-class="opacity-100"
+      leave-active-class="transition duration-100 ease-in"
+      leave-from-class="opacity-100"
+      leave-to-class="opacity-0"
+    >
+      <div
+        v-if="showAddDeviceModal"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+        @pointerdown.self="showAddDeviceModal = false"
+      >
+        <div
+          class="relative w-full max-w-lg bg-bg-panel rounded-2xl shadow-2xl border border-bg-elevated flex flex-col max-h-[80vh]"
+          @pointerdown.stop
+        >
+          <!-- Header -->
+          <div class="flex items-center justify-between px-5 py-4 border-b border-bg-elevated shrink-0">
+            <div>
+              <h2 class="text-base font-semibold text-fg">Add Device</h2>
+              <p class="text-xs text-fg-muted mt-0.5">{{ availableEntities.length }} available · click a device to place it</p>
+            </div>
+            <button
+              class="text-fg-muted hover:text-fg p-1.5 rounded-lg hover:bg-bg-elevated transition-colors"
+              @click="showAddDeviceModal = false"
+            >
+              <Icon icon="mdi:close" width="18" height="18" />
+            </button>
+          </div>
+
+          <!-- Search -->
+          <div class="px-4 py-3 border-b border-bg-elevated shrink-0">
+            <div class="relative">
+              <Icon icon="mdi:magnify" class="absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted pointer-events-none" width="16" height="16" />
+              <input
+                ref="addDeviceModalInput"
+                v-model="addDeviceSearch"
+                type="search"
+                placeholder="Search by name or entity ID…"
+                class="bg-bg text-fg text-sm rounded-xl pl-9 pr-4 py-2.5 border border-bg-elevated w-full placeholder:text-fg-muted/60 focus:border-accent/60 focus:outline-none transition-colors"
+              />
+            </div>
+          </div>
+
+          <!-- Entity list -->
+          <div class="overflow-y-auto flex-1">
+            <p v-if="filteredAvailableEntities.length === 0" class="text-sm text-fg-muted text-center py-10">
+              No available entities match "{{ addDeviceSearch }}"
+            </p>
+            <button
+              v-for="e in filteredAvailableEntities"
+              :key="e.entity_id"
+              class="w-full flex items-center gap-3 px-4 py-3 hover:bg-accent/8 transition-colors text-left border-b border-bg-elevated/40 last:border-0"
+              @click="selectAddDevice(e.entity_id)"
+            >
+              <div class="w-9 h-9 rounded-xl bg-bg-elevated flex items-center justify-center shrink-0">
+                <Icon :icon="getAutoIcon(e.entity_id)" class="text-fg-muted" width="20" height="20" />
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-sm text-fg truncate font-medium">{{ (e.attributes?.friendly_name as string | undefined) ?? e.entity_id }}</span>
+                  <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-bg-elevated text-fg-muted font-mono shrink-0">{{ entityDomain(e.entity_id) }}</span>
+                </div>
+                <div class="flex items-center gap-2 mt-0.5">
+                  <span class="text-xs text-fg-muted font-mono truncate">{{ e.entity_id }}</span>
+                  <span
+                    v-if="e.state"
+                    class="text-[10px] px-1.5 py-0 rounded-full shrink-0 font-medium"
+                    :class="['on','open','playing','unlocked','true'].includes(e.state)
+                      ? 'bg-accent/20 text-accent'
+                      : 'bg-bg border border-bg-elevated text-fg-muted'"
+                  >{{ e.state }}</span>
+                </div>
+              </div>
+              <Icon icon="mdi:plus-circle-outline" class="text-fg-muted shrink-0" width="18" height="18" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
 </template>
