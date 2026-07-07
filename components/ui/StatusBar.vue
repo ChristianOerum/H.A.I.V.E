@@ -6,6 +6,28 @@ const theme = useThemeStore()
 const { isMock } = useHomeAssistant()
 const { unlocked, lock } = useAuth()
 
+const weather = useWeather()
+const WEATHER_ICONS: Record<string, string> = {
+  sunny: 'mdi:weather-sunny',
+  'clear-night': 'mdi:weather-night',
+  partlycloudy: 'mdi:weather-partly-cloudy',
+  cloudy: 'mdi:weather-cloudy',
+  fog: 'mdi:weather-fog',
+  rainy: 'mdi:weather-rainy',
+  pouring: 'mdi:weather-pouring',
+  snowy: 'mdi:weather-snowy',
+  'snowy-rainy': 'mdi:weather-snowy-rainy',
+  'lightning-rainy': 'mdi:weather-lightning-rainy',
+  lightning: 'mdi:weather-lightning',
+  hail: 'mdi:weather-hail',
+  windy: 'mdi:weather-windy',
+  exceptional: 'mdi:weather-cloudy-alert',
+}
+const weatherIcon = computed(() => WEATHER_ICONS[weather.condition.value] ?? 'mdi:weather-partly-cloudy')
+const weatherLabel = computed(() =>
+  weather.condition.value.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+)
+
 const now = ref(new Date())
 let timer: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
@@ -59,6 +81,32 @@ const onKeypadClose = () => { showKeypad.value = false }
       <div :class="unlocked ? '' : 'opacity-30 pointer-events-none select-none'">
         <ThemeToggle />
       </div>
+
+      <!-- Weather effects — toggle all in-scene weather visuals on/off -->
+      <button
+        class="btn-touch !px-3 gap-2 text-sm"
+        :class="[
+          weather.enabled.value ? 'text-fg' : 'text-fg-muted',
+          unlocked ? '' : 'opacity-30 pointer-events-none select-none',
+        ]"
+        :title="weather.enabled.value ? 'Weather effects: on — click to disable' : 'Weather effects: off — click to enable'"
+        @click="weather.toggle()"
+      >
+        <Icon :icon="weather.enabled.value ? weatherIcon : 'mdi:weather-cloudy-alert'" width="18" height="18" />
+        <span class="hidden md:inline">{{ weather.enabled.value ? 'Weather' : 'Weather off' }}</span>
+      </button>
+
+      <!-- Mock-only weather cycle — step through conditions for testing -->
+      <button
+        v-if="isMock()"
+        class="btn-touch !px-3 gap-2 text-sm"
+        :class="unlocked ? '' : 'opacity-30 pointer-events-none select-none'"
+        :title="`Test weather: ${weatherLabel} — click to cycle`"
+        @click="weather.cycleCondition()"
+      >
+        <Icon :icon="weatherIcon" width="18" height="18" />
+        <span class="hidden md:inline">{{ weatherLabel }}</span>
+      </button>
 
       <!-- Day cycle demo — hidden; keep for future use -->
       <button

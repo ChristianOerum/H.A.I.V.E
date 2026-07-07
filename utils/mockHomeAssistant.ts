@@ -68,6 +68,14 @@ const initial: HassEntities = Object.fromEntries(
     entity('cover.bedroom_blinds', 'open', { current_position: 100 }),
     entity('cover.garage_door', 'closed', { current_position: 0 }),
     entity('camera.front_door', 'idle', { entity_picture: '' }),
+    entity('weather.home', 'partlycloudy', {
+      friendly_name: 'Home',
+      temperature: 14,
+      temperature_unit: '°C',
+      humidity: 62,
+      wind_speed: 8,
+      wind_speed_unit: 'km/h',
+    }),
   ].map((e) => [e.entity_id, e]),
 )
 
@@ -152,6 +160,10 @@ export async function mockCallService(
 
 let simulationInterval: ReturnType<typeof setInterval> | null = null
 
+// Slowly cycle the mock weather so its scene effects (rain/snow/dimming) are visible.
+const WEATHER_CYCLE = ['sunny', 'partlycloudy', 'cloudy', 'rainy', 'pouring', 'snowy']
+let weatherTick = 0
+
 /** Start the mock simulation. Safe to call multiple times — only one interval runs at a time. */
 export function startMockSimulation() {
   if (simulationInterval !== null) return
@@ -162,6 +174,13 @@ export function startMockSimulation() {
       const cur = Number(e.state)
       const next = (cur + (Math.random() - 0.5) * 0.3).toFixed(1)
       update(id, { state: next })
+    }
+    weatherTick++
+    // Advance the weather condition every ~30s (6 ticks).
+    if (weatherTick % 6 === 0 && state['weather.home']) {
+      const condition = WEATHER_CYCLE[(weatherTick / 6) % WEATHER_CYCLE.length]
+      const temp = condition === 'snowy' ? -2 : condition === 'sunny' ? 22 : 14
+      update('weather.home', { state: condition, attributes: { temperature: temp } })
     }
   }, 5000)
 }
