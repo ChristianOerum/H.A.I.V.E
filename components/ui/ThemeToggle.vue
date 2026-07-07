@@ -17,7 +17,7 @@ const label = computed(() =>
 
 <template>
   <button
-    class="btn-touch text-sm gap-2 px-3 py-1 min-h-touch"
+    class="btn-touch text-xs gap-2 px-3 py-1 min-h-touch"
     :aria-label="`Theme: ${label}`"
     :title="`Theme: ${label} (tap to cycle)`"
     @click="theme.toggle()"

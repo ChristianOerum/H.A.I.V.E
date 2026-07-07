@@ -136,7 +136,7 @@ const label = computed(() => (saveFlash.value ? 'Saved!' : 'Save View'))
     <!-- Locked state: only the lock icon, tap to unlock -->
     <button
       v-if="isLocked"
-      class="btn-touch !px-3 text-sm select-none text-orange-400 border border-orange-400/50"
+      class="btn-touch !px-3 text-xs select-none text-orange-400 border border-orange-400/50"
       title="Camera locked — tap to unlock"
       @click="doToggleLock"
     >
@@ -146,7 +146,7 @@ const label = computed(() => (saveFlash.value ? 'Saved!' : 'Save View'))
     <!-- Normal state: camera icon + label with hold/swipe behaviour -->
     <button
       v-else
-      class="btn-touch !px-3 gap-2 text-sm select-none touch-none"
+      class="btn-touch !px-3 gap-2 text-xs select-none touch-none"
       :class="saveFlash ? 'text-accent border border-accent/50' : 'text-fg-muted'"
       title="Tap to save view · Hold for options · Swipe down to lock"
       @pointerdown="onPointerDown"

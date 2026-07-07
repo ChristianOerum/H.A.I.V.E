@@ -31,7 +31,7 @@ export default {
       minHeight: { touch: '44px' },
       minWidth: { touch: '44px' },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
+        sans: ['Axiforma', 'Inter', 'system-ui', 'sans-serif'],
       },
     },
   },

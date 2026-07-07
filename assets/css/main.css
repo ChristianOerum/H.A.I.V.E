@@ -2,6 +2,48 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ---- Axiforma font family (self-hosted from assets/fonts) ---- */
+@font-face {
+  font-family: 'Axiforma';
+  src: url('~/assets/fonts/Axiforma-Regular.woff2') format('woff2'),
+       url('~/assets/fonts/Axiforma-Regular.woff') format('woff');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Axiforma';
+  src: url('~/assets/fonts/Axiforma-Medium.woff2') format('woff2'),
+       url('~/assets/fonts/Axiforma-Medium.woff') format('woff');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Axiforma';
+  src: url('~/assets/fonts/Axiforma-SemiBold.woff2') format('woff2'),
+       url('~/assets/fonts/Axiforma-SemiBold.woff') format('woff');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Axiforma';
+  src: url('~/assets/fonts/Axiforma-Bold.woff2') format('woff2'),
+       url('~/assets/fonts/Axiforma-Bold.woff') format('woff');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Axiforma';
+  src: url('~/assets/fonts/Axiforma-Black.woff2') format('woff2'),
+       url('~/assets/fonts/Axiforma-Black.woff') format('woff');
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* ---- Theme tokens (RGB triplets so Tailwind's <alpha-value> works) ----
  *
  * Light: subtly warm/beige paper — not pure white.
@@ -53,6 +95,7 @@ html.light {
     overflow: hidden;
     background: rgb(var(--bg));
     color: rgb(var(--fg));
+    font-family: 'Axiforma', 'Inter', system-ui, sans-serif;
     overscroll-behavior: none;
     -webkit-tap-highlight-color: transparent;
   }
@@ -106,6 +149,16 @@ html.light {
 
 @layer components {
   .btn-touch {
-    @apply min-h-touch min-w-touch flex items-center justify-center px-4 py-2 rounded-xl bg-bg-elevated text-fg active:bg-accent-dim active:text-white transition-colors;
+    @apply min-h-touch min-w-touch flex items-center justify-center px-4 py-2 rounded-xl bg-bg-elevated text-fg active:bg-accent-dim active:text-white transition-colors leading-none;
+  }
+
+  /* Axiforma's font metrics reserve extra space below the glyphs, which makes
+     button labels sit visually too high next to their icons. Trim the font's
+     over-height (cap-height to baseline) so text is optically centred.
+     Progressive enhancement: ignored by browsers without text-box support. */
+  .btn-touch span {
+    line-height: 1;
+    text-box: trim-both cap alphabetic;
   }
 }
+

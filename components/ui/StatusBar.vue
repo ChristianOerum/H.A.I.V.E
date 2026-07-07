@@ -59,7 +59,7 @@ const onKeypadClose = () => { showKeypad.value = false }
       >MOCK</span>
       <span v-if="entities.error" class="text-xs text-red-400">{{ entities.error }}</span>
     </div>
-    <div class="flex items-center gap-3 pointer-events-auto">
+    <div class="flex items-center gap-1.5 pointer-events-auto">
 
       <!-- ThemeToggle — always visible, dimmed when locked -->
       <div :class="unlocked ? '' : 'opacity-30 pointer-events-none select-none'">
@@ -68,7 +68,7 @@ const onKeypadClose = () => { showKeypad.value = false }
 
       <!-- Weather effects — toggle all in-scene weather visuals on/off -->
       <button
-        class="btn-touch !px-3 gap-2 text-sm"
+        class="btn-touch !px-3 gap-2 text-xs"
         :class="[
           weather.enabled.value ? 'text-fg' : 'text-fg-muted',
           unlocked ? '' : 'opacity-30 pointer-events-none select-none',
@@ -83,7 +83,7 @@ const onKeypadClose = () => { showKeypad.value = false }
       <!-- Mock-only weather cycle — step through conditions for testing -->
       <button
         v-if="isMock()"
-        class="btn-touch !px-3 gap-2 text-sm"
+        class="btn-touch !px-3 gap-2 text-xs"
         :class="unlocked ? '' : 'opacity-30 pointer-events-none select-none'"
         :title="`Test weather: ${weatherLabel} — click to cycle`"
         @click="weather.cycleCondition()"
@@ -95,7 +95,7 @@ const onKeypadClose = () => { showKeypad.value = false }
       <!-- Day cycle demo — hidden; keep for future use -->
       <button
         v-if="false"
-        class="btn-touch !px-3 gap-2 text-sm"
+        class="btn-touch !px-3 gap-2 text-xs"
         :class="theme.isSimulating ? 'text-accent border border-accent/50' : 'text-fg-muted'"
         :title="theme.isSimulating ? 'Stop day simulation' : 'Simulate 24h day cycle (72s)'"
         @click="theme.startDaySimulation()"
@@ -105,7 +105,7 @@ const onKeypadClose = () => { showKeypad.value = false }
 
       <!-- Walls — always visible, dimmed when locked -->
       <button
-        class="btn-touch !px-3 gap-2 text-sm"
+        class="btn-touch !px-3 gap-2 text-xs"
         :class="[
           theme.wallOpacityMode !== 'solid' ? 'text-accent border border-accent/50' : 'text-fg-muted',
           unlocked ? '' : 'opacity-30 pointer-events-none select-none',
@@ -131,7 +131,7 @@ const onKeypadClose = () => { showKeypad.value = false }
       <!-- Edit floorplan — hidden when locked -->
       <button
         v-if="unlocked"
-        class="btn-touch !px-3 text-sm"
+        class="btn-touch !px-3 text-xs"
         :class="fp.editMode ? 'text-accent border border-accent/50' : 'text-fg-muted'"
         @click="fp.toggleEditMode()"
         title="Edit floorplan"
@@ -140,7 +140,7 @@ const onKeypadClose = () => { showKeypad.value = false }
       <!-- Lock / unlock button — only shown when auth is enabled -->
       <button
         v-if="authEnabled"
-        class="btn-touch !px-3 text-sm transition-colors"
+        class="btn-touch !px-3 text-xs transition-colors"
         :class="unlocked ? 'text-accent border border-accent/50' : 'text-fg'"
         :title="unlocked ? 'Lock controls' : 'Unlock controls'"
         @click="unlocked ? lock() : openKeypad()"
