@@ -16,13 +16,13 @@ const fp = useFloorplanStore()
 const { precipitation, intensity, cloudCoverage, isFoggy, showStars, condition } = useWeather()
 const { onLoop } = useRenderLoop()
 
-const MARGIN = 1.5
-const CLOUD_MARGIN = 5
+const MARGIN = 5
+const CLOUD_MARGIN = 10
 const CEILING = 6
 const RAIN_MAX = 1600
 const SNOW_MAX = 1100
-const CLOUD_MAX = 80
-const FOG_MAX = 150
+const CLOUD_MAX = 140
+const FOG_MAX = 300
 const STAR_MAX = 240
 const RAIN_LEN = 0.4
 const RAIN_TILT = 0.12
@@ -70,12 +70,18 @@ const cloudX = new Float32Array(CLOUD_MAX)
 const cloudY = new Float32Array(CLOUD_MAX)
 const cloudZ = new Float32Array(CLOUD_MAX)
 const cloudV = new Float32Array(CLOUD_MAX)
+const cloudPh = new Float32Array(CLOUD_MAX)
+const cloudYBase = new Float32Array(CLOUD_MAX)
+const cloudZV = new Float32Array(CLOUD_MAX)
 let cloudPos = new Float32Array(CLOUD_MAX * 3)
 
 const fogX = new Float32Array(FOG_MAX)
 const fogY = new Float32Array(FOG_MAX)
 const fogZ = new Float32Array(FOG_MAX)
 const fogV = new Float32Array(FOG_MAX)
+const fogPh = new Float32Array(FOG_MAX)
+const fogYBase = new Float32Array(FOG_MAX)
+const fogZV = new Float32Array(FOG_MAX)
 let fogPos = new Float32Array(FOG_MAX * 3)
 
 const starX = new Float32Array(STAR_MAX)
@@ -110,13 +116,20 @@ function seed() {
   for (let i = 0; i < CLOUD_MAX; i++) {
     cloudX[i] = cw + Math.random() * (ce - cw)
     cloudZ[i] = cn + Math.random() * (cs - cn)
-    cloudY[i] = 4.6 + Math.random() * 1.6
-    cloudV[i] = 0.25 + Math.random() * 0.3
+    cloudYBase[i] = cloudY[i] = 4.5 + Math.random() * 2.0
+    cloudV[i]  = 0.2 + Math.random() * 0.35
+    cloudPh[i] = Math.random() * Math.PI * 2
+    cloudZV[i] = (Math.random() - 0.5) * 0.1
   }
   for (let i = 0; i < FOG_MAX; i++) {
     fogX[i] = randX(b); fogZ[i] = randZ(b)
-    fogY[i] = 0.4 + Math.random() * 1.8
-    fogV[i] = 0.1 + Math.random() * 0.25
+    // Bias fog to waist-height; avoids floor-plane z-fighting and keeps it visible
+    fogYBase[i] = fogY[i] = Math.random() < 0.65
+      ? 0.5 + Math.random() * 0.8
+      : 1.3 + Math.random() * 1.2
+    fogV[i]  = 0.06 + Math.random() * 0.18
+    fogPh[i] = Math.random() * Math.PI * 2
+    fogZV[i] = (Math.random() - 0.5) * 0.15
   }
   for (let i = 0; i < STAR_MAX; i++) {
     starX[i] = cw + Math.random() * (ce - cw)
@@ -178,17 +191,42 @@ function makeDotTexture(): THREE.Texture {
   return tex
 }
 
-/** Very soft, wide falloff sprite for cloud/fog puffs. */
+/** Soft wide-falloff sprite for fog puffs — 96 px, smooth multi-stop gradient. */
 function makePuffTexture(): THREE.Texture {
+  const size = 96, half = 48
   const c = document.createElement('canvas')
-  c.width = c.height = 64
+  c.width = c.height = size
   const ctx = c.getContext('2d')!
-  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32)
-  g.addColorStop(0, 'rgba(255,255,255,0.9)')
-  g.addColorStop(0.5, 'rgba(255,255,255,0.4)')
-  g.addColorStop(1, 'rgba(255,255,255,0)')
+  const g = ctx.createRadialGradient(half, half, 0, half, half, half)
+  g.addColorStop(0,    'rgba(255,255,255,0.88)')
+  g.addColorStop(0.28, 'rgba(255,255,255,0.58)')
+  g.addColorStop(0.55, 'rgba(255,255,255,0.22)')
+  g.addColorStop(0.8,  'rgba(255,255,255,0.05)')
+  g.addColorStop(1,    'rgba(255,255,255,0)')
   ctx.fillStyle = g
-  ctx.fillRect(0, 0, 64, 64)
+  ctx.fillRect(0, 0, size, size)
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  return tex
+}
+
+/** Cloud sprite — flat centre so overlapping puffs merge into a mass, not balls. */
+function makeCloudTexture(): THREE.Texture {
+  const size = 128, half = 64
+  const c = document.createElement('canvas')
+  c.width = c.height = size
+  const ctx = c.getContext('2d')!
+  // Low centre opacity + very gradual falloff — sprites accumulate into a cloud
+  // shape when they overlap rather than each reading as a distinct circle.
+  const g = ctx.createRadialGradient(half, half, 0, half, half, half)
+  g.addColorStop(0,    'rgba(255,255,255,0.52)')
+  g.addColorStop(0.2,  'rgba(255,255,255,0.44)')
+  g.addColorStop(0.48, 'rgba(255,255,255,0.24)')
+  g.addColorStop(0.72, 'rgba(255,255,255,0.08)')
+  g.addColorStop(0.9,  'rgba(255,255,255,0.02)')
+  g.addColorStop(1,    'rgba(255,255,255,0)')
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, size, size)
   const tex = new THREE.CanvasTexture(c)
   tex.colorSpace = THREE.SRGBColorSpace
   return tex
@@ -207,6 +245,7 @@ function makePoints(max: number, mat: THREE.PointsMaterial): { obj: THREE.Points
 onMounted(() => {
   const dot = makeDotTexture()
   const puff = makePuffTexture()
+  const cloudTex = makeCloudTexture()
 
   const rainGeo = new THREE.BufferGeometry()
   rainPos = new Float32Array(RAIN_MAX * 6)
@@ -226,14 +265,14 @@ onMounted(() => {
   snowObj.value = snow.obj; snowPos = snow.pos
 
   const cloud = makePoints(CLOUD_MAX, new THREE.PointsMaterial({
-    color: 0xffffff, map: puff, size: 3.2, sizeAttenuation: true,
-    transparent: true, opacity: 0.5, depthWrite: false,
+    color: 0xffffff, map: cloudTex, size: 6.5, sizeAttenuation: true,
+    transparent: true, opacity: 0.28, depthWrite: false,
   }))
   cloudObj.value = cloud.obj; cloudPos = cloud.pos
 
   const fog = makePoints(FOG_MAX, new THREE.PointsMaterial({
-    color: 0xc8ced8, map: puff, size: 3.6, sizeAttenuation: true,
-    transparent: true, opacity: 0.28, depthWrite: false,
+    color: 0xb8c4d2, map: puff, size: 5.8, sizeAttenuation: true,
+    transparent: true, opacity: 0.25, depthWrite: false, depthTest: false,
   }))
   fogObj.value = fog.obj; fogPos = fog.pos
 
@@ -292,25 +331,41 @@ onLoop(({ delta, elapsed }: { delta: number; elapsed: number }) => {
   if (cov > 0 && cloudObj.value) {
     const active = Math.max(1, Math.floor(CLOUD_MAX * cov))
     const ce = b.maxX + CLOUD_MARGIN, cw = b.minX - CLOUD_MARGIN
+    const cn = b.minZ - CLOUD_MARGIN, cs = b.maxZ + CLOUD_MARGIN
     for (let i = 0; i < active; i++) {
       cloudX[i] += cloudV[i] * dt
-      if (cloudX[i] > ce) cloudX[i] = cw
+      cloudZ[i] += cloudZV[i] * dt
+      // Gentle vertical bob — keeps Y anchored to its seeded baseline
+      cloudY[i] = cloudYBase[i] + Math.sin(elapsed * 0.18 + cloudPh[i]) * 0.25
+      if (cloudX[i] > ce) { cloudX[i] = cw; cloudZ[i] = cn + Math.random() * (cs - cn) }
+      if (cloudZ[i] > cs) cloudZ[i] = cn
+      if (cloudZ[i] < cn) cloudZ[i] = cs
     }
     const mat = cloudObj.value.material as THREE.PointsMaterial
-    // Overcast clouds read grey; scattered ones stay white.
-    mat.color.set(condition.value === 'cloudy' ? 0xb4bcc8 : 0xffffff)
-    mat.opacity = condition.value === 'cloudy' ? 0.62 : 0.5
+    // Overcast grey; scattered/partly-cloudy stay white.
+    mat.color.set(condition.value === 'cloudy' ? 0xa8b2c0 : 0xffffff)
+    mat.opacity = condition.value === 'cloudy' ? 0.42 : 0.28
     cloudObj.value.geometry.setDrawRange(0, active)
     writeXYZ(cloudPos, cloudX, cloudY, cloudZ, active, cloudObj.value)
   }
 
-  // Fog — slow low-lying drift.
+  // Fog — slow low-lying multi-directional drift with gentle vertical wisp.
   if (isFoggy.value && fogObj.value) {
     const ce = b.maxX + MARGIN, cw = b.minX - MARGIN
+    const cn = b.minZ - MARGIN, cs = b.maxZ + MARGIN
     for (let i = 0; i < FOG_MAX; i++) {
       fogX[i] += fogV[i] * dt
+      fogZ[i] += fogZV[i] * dt
+      // Y anchored to seeded base — slow sine gives a natural wisp rise/fall
+      fogY[i] = fogYBase[i] + Math.sin(elapsed * 0.28 + fogPh[i]) * 0.18
       if (fogX[i] > ce) fogX[i] = cw
+      if (fogX[i] < cw) fogX[i] = ce
+      if (fogZ[i] > cs) fogZ[i] = cn
+      if (fogZ[i] < cn) fogZ[i] = cs
     }
+    // Subtle global opacity pulse — fog feels alive
+    const mat = fogObj.value.material as THREE.PointsMaterial
+    mat.opacity = 0.22 + 0.04 * Math.sin(elapsed * 0.35)
     writeXYZ(fogPos, fogX, fogY, fogZ, FOG_MAX, fogObj.value)
   }
 

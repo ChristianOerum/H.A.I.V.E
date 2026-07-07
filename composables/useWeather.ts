@@ -53,6 +53,32 @@ export function useWeather() {
     return Number.isFinite(h) ? h : null
   })
   const windSpeed = computed<number>(() => Number(entity.value?.attributes?.wind_speed) || 0)
+  const windSpeedUnit = computed(() =>
+    String(entity.value?.attributes?.wind_speed_unit ?? 'km/h'),
+  )
+
+  /** A single daily forecast entry, presentation-ready. */
+  interface ForecastDay {
+    datetime: string
+    condition: string
+    tempHigh: number | null
+    tempLow: number | null
+  }
+  /** Upcoming daily forecast read from the weather entity's `forecast` attribute. */
+  const forecast = computed<ForecastDay[]>(() => {
+    const raw = entity.value?.attributes?.forecast
+    if (!Array.isArray(raw)) return []
+    return raw.map((f) => {
+      const high = Number(f?.temperature)
+      const low = Number(f?.templow)
+      return {
+        datetime: String(f?.datetime ?? ''),
+        condition: String(f?.condition ?? 'unknown'),
+        tempHigh: Number.isFinite(high) ? high : null,
+        tempLow: Number.isFinite(low) ? low : null,
+      }
+    })
+  })
 
   const precipitation = computed<Precipitation>(() => {
     const c = effectiveCondition.value
@@ -155,6 +181,8 @@ export function useWeather() {
     temperatureUnit,
     humidity,
     windSpeed,
+    windSpeedUnit,
+    forecast,
     precipitation,
     intensity,
     isNight,

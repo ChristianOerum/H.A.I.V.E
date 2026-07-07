@@ -28,22 +28,6 @@ const weatherLabel = computed(() =>
   weather.condition.value.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
 )
 
-const now = ref(new Date())
-let timer: ReturnType<typeof setInterval> | null = null
-onMounted(() => {
-  timer = setInterval(() => (now.value = new Date()), 1000)
-})
-onBeforeUnmount(() => {
-  if (timer) clearInterval(timer)
-})
-
-const time = computed(() =>
-  now.value.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-)
-const date = computed(() =>
-  now.value.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }),
-)
-
 const statusColor = computed(() => {
   switch (entities.status) {
     case 'connected': return 'bg-accent'
@@ -153,7 +137,7 @@ const onKeypadClose = () => { showKeypad.value = false }
         title="Edit floorplan"
       ><Icon icon="mdi:cog" width="18" height="18" /></button>
 
-      <!-- Lock / unlock button — only shown when auth is enabled, closest to time -->
+      <!-- Lock / unlock button — only shown when auth is enabled -->
       <button
         v-if="authEnabled"
         class="btn-touch !px-3 text-sm transition-colors"
@@ -163,11 +147,6 @@ const onKeypadClose = () => { showKeypad.value = false }
       >
         <Icon :icon="unlocked ? 'mdi:lock-open-outline' : 'mdi:lock-outline'" width="18" height="18" />
       </button>
-
-      <div class="text-right">
-        <div class="text-xl font-light leading-none">{{ time }}</div>
-        <div class="text-xs text-fg-muted">{{ date }}</div>
-      </div>
     </div>
   </div>
 

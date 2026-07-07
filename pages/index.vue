@@ -33,6 +33,7 @@ onMounted(async () => {
   <div class="relative w-screen h-screen overflow-hidden bg-bg text-fg">
     <SceneRoot />
     <StatusBar />
+    <ClientOnly><WeatherPanel /></ClientOnly>
     <!-- SceneMarkerOverlay renders 2D icon markers projected from 3D space.
          ClientOnly avoids SSR/hydration mismatches since positions are runtime-only. -->
     <ClientOnly><SceneMarkerOverlay /></ClientOnly>

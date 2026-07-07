@@ -20,6 +20,25 @@ function entity(
   } as HassEntity
 }
 
+// A simple multi-day forecast for the mock weather entity so the weather panel
+// has something to render offline.
+function mockForecast() {
+  const conditions = ['partlycloudy', 'sunny', 'cloudy', 'rainy', 'snowy']
+  const highs = [15, 18, 13, 11, 2]
+  const lows = [7, 9, 6, 5, -3]
+  const start = new Date()
+  return conditions.map((condition, i) => {
+    const d = new Date(start)
+    d.setDate(start.getDate() + i + 1)
+    return {
+      datetime: d.toISOString(),
+      condition,
+      temperature: highs[i],
+      templow: lows[i],
+    }
+  })
+}
+
 const initial: HassEntities = Object.fromEntries(
   [
     entity('light.living_room', 'on', {
@@ -75,6 +94,7 @@ const initial: HassEntities = Object.fromEntries(
       humidity: 62,
       wind_speed: 8,
       wind_speed_unit: 'km/h',
+      forecast: mockForecast(),
     }),
   ].map((e) => [e.entity_id, e]),
 )
