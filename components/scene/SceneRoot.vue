@@ -31,8 +31,11 @@ watchEffect(() => {
   const light = sunLight.value
   if (!light) return
   const h = shadowHalfExtent.value
-  light.shadow.bias = 0.0
-  light.shadow.normalBias = 0.04
+  // Low normalBias avoids "peter-panning": a high value detaches the shadow from
+  // wall bases, leaving a thin lit line where walls meet the floor. A tiny
+  // negative depth bias keeps surfaces free of shadow acne.
+  light.shadow.bias = -0.0002
+  light.shadow.normalBias = 0.012
   light.shadow.mapSize.set(2048, 2048)
   const cam = light.shadow.camera as THREE.OrthographicCamera
   cam.left = -h; cam.right = h; cam.top = h; cam.bottom = -h

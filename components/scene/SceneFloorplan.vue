@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Shape, BoxGeometry, ExtrudeGeometry, BufferGeometry, MeshBasicMaterial, MeshDepthMaterial, Mesh } from 'three'
+import { Shape, BoxGeometry, ExtrudeGeometry, BufferGeometry, MeshBasicMaterial, MeshDepthMaterial, Mesh, FrontSide } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import type { FloorplanRoom, FloorplanFurniture } from '~/stores/floorplan'
 import {
@@ -110,6 +110,10 @@ const WIN_TOP   = WALL_HEIGHT * 0.80   // ~0.96
 // Walls taller than this opt out of receive-shadow so lights don't paint
 // shadow patches onto their top surface (visible in the dollhouse view).
 const WALL_SHADOW_RECEIVE_MAX_H = 1.8
+// Sink floor-touching wall pieces slightly below y=0 so their base overlaps the
+// floor plane. Without this, the wall base and floor top are coplanar and point
+// lights leak a thin sliver of light through the seam where they meet.
+const WALL_BASE_SINK = 0.03
 
 interface WallPiece {
   key: string
@@ -524,7 +528,10 @@ const wallPieces = computed<WallPiece[]>(() => {
       const emit = (key: string, yBottom: number, h: number) => {
         if (h <= 0.01) return
         usedKeys.add(key)
-        pieces.push({ key, geo: getWallGeo(key, quad, yBottom, h), wallH })
+        // Floor-touching pieces sink below y=0 to close the wall/floor seam.
+        const yb = yBottom <= 0 ? -WALL_BASE_SINK : yBottom
+        const hh = h + (yBottom - yb)
+        pieces.push({ key, geo: getWallGeo(key, quad, yb, hh), wallH })
       }
 
       if (seg.type === 'solid') {
@@ -546,7 +553,7 @@ const wallPieces = computed<WallPiece[]>(() => {
   // Emit the junction core caps (flush outer face + filled inner corners).
   for (const c of caps) {
     usedKeys.add(c.key)
-    pieces.push({ key: c.key, geo: getWallGeo(c.key, c.poly, 0, c.h), wallH: c.h })
+    pieces.push({ key: c.key, geo: getWallGeo(c.key, c.poly, -WALL_BASE_SINK, c.h + WALL_BASE_SINK), wallH: c.h })
   }
 
   // Dispose cached geometries for pieces that no longer exist.
@@ -971,6 +978,7 @@ onUnmounted(() => {
         :key="`wm-short-${theme.wallOpacityMode}`"
         :color="sceneColors.wall"
         :roughness="0.85"
+        :shadow-side="FrontSide"
         :transparent="theme.wallOpacityMode !== 'solid'"
         :opacity="theme.wallOpacity"
         :depth-write="theme.wallOpacityMode === 'solid'"
@@ -987,6 +995,7 @@ onUnmounted(() => {
         :key="`wm-tall-${theme.wallOpacityMode}`"
         :color="sceneColors.wall"
         :roughness="0.85"
+        :shadow-side="FrontSide"
         :transparent="theme.wallOpacityMode !== 'solid'"
         :opacity="theme.wallOpacity"
         :depth-write="theme.wallOpacityMode === 'solid'"

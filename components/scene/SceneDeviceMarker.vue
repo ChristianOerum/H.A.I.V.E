@@ -28,11 +28,17 @@ const effectiveLightPos = computed(() => props.lightPosition ?? props.placement.
 const lightRef = shallowRef<PointLight | null>(null)
 watch(lightRef, (light) => {
   if (!light) return
-  light.shadow.mapSize.width  = 1024
-  light.shadow.mapSize.height = 1024
+  // Higher-res shadow map so the thin (0.12 m) walls are a precise occluder;
+  // this lets normalBias stay very low without introducing shadow acne.
+  light.shadow.mapSize.width  = 2048
+  light.shadow.mapSize.height = 2048
   light.shadow.camera.near    = 0.1
   light.shadow.camera.far     = 8
   light.shadow.bias           = -0.0005
+  // The wall material casts with shadowSide=FrontSide, so the near wall face is
+  // recorded and the far (exterior) face stays fully shadowed a full wall
+  // thickness back — no light bleeds through. normalBias can stay moderate to
+  // avoid acne on the lit interior surfaces.
   light.shadow.normalBias     = 0.02
 })
 
@@ -46,10 +52,11 @@ onUnmounted(() => scene.value.remove(tvTarget))
 
 watch(tvSpotRef, (spot) => {
   if (!spot) return
-  // Shadow config matches the lamp point light: walls block the beam so light
-  // can't bleed into neighbouring rooms.
-  spot.shadow.mapSize.width  = 512
-  spot.shadow.mapSize.height = 512
+  // Shadow config matches the lamp point light: a high-res map plus very low
+  // normalBias keeps the beam anchored at the wall base so TV light can't
+  // bleed into neighbouring rooms along the floor edge.
+  spot.shadow.mapSize.width  = 2048
+  spot.shadow.mapSize.height = 2048
   spot.shadow.camera.near    = 0.1
   spot.shadow.camera.far     = 8
   spot.shadow.bias           = -0.0005

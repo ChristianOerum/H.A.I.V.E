@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Icon } from '@iconify/vue'
 import { getAdapter } from '~/utils/deviceRegistry'
-import { hexToHue, hueToHex, hueToHexLight, rgbTripletToHex, hexToRgbTriplet, DARK_PALETTES, LIGHT_PALETTES, type DarkVariant, type LightVariant, type CustomPalette } from '~/stores/theme'
+import { hexToHue, hexToHsl, hslToHex, hueToHex, hueToHexLight, rgbTripletToHex, hexToRgbTriplet, DARK_PALETTES, LIGHT_PALETTES, type DarkVariant, type LightVariant, type CustomPalette } from '~/stores/theme'
 
 const fp = useFloorplanStore()
 const layout = useLayoutStore()
@@ -241,14 +241,19 @@ function resolvePalette(key: string, type: 'dark' | 'light') {
 const darkPreview  = computed(() => resolvePalette(theme.darkVariant,  'dark'))
 const lightPreview = computed(() => resolvePalette(theme.lightVariant, 'light'))
 
-// Derived hex for the color-picker input (dark-mode accent swatch for hue)
-const accentPickerHex = computed(() => hueToHex(theme.accentHue))
-const accentDarkHex = computed(() => hueToHex(theme.accentHue))
-const accentLightHex = computed(() => hueToHexLight(theme.accentHue))
+// Derived hex for the color-picker input (uses actual stored S/L, not fixed defaults)
+const accentPickerHex = computed(() => hslToHex(theme.accentHue, theme.accentSat, theme.accentLit))
+const accentDarkHex = computed(() => hslToHex(theme.accentHue, theme.accentSat, theme.accentLit))
+const accentLightHex = computed(() => hslToHex(
+  theme.accentHue,
+  Math.round(theme.accentSat * (70 / 78)),
+  Math.round(theme.accentLit * (42 / 62)),
+))
 
 function onAccentPickerInput(e: Event) {
   const hex = (e.target as HTMLInputElement).value
-  theme.setAccentHue(hexToHue(hex))
+  const [h, s, l] = hexToHsl(hex)
+  theme.setAccentColor(h, s, l)
 }
 
 // ---- Furniture group export / import ----
