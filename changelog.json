@@ -1,0 +1,12 @@
+[
+  {
+    "version": "2026.7.1",
+    "date": "2026-07-08",
+    "changes": [
+      "Added version watermark on the main screen — tap it to view the full changelog.",
+      "Introduced changelog.json as the single source of truth for release history baked into each Docker image.",
+      "Switched to year.month.version numbering (e.g. 2026.7.1).",
+      "Initial HAIVE release — 3D Home Assistant interface for Raspberry Pi touchscreens."
+    ]
+  }
+]

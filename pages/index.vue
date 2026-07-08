@@ -58,6 +58,7 @@ onMounted(async () => {
     <FloorplanEditorPanel />
     <DeviceControlPanel />
     <WifiQrButton v-if="!layout.selectedEntityId && !fp.editMode" />
+    <VersionWatermark />
 
     <div
       v-if="!device.config.value.haConfigured && device.role.value === 'master' && entities.list.length === 0 && entities.status !== 'connecting'"
