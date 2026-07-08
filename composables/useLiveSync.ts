@@ -11,6 +11,7 @@ export function useLiveSync() {
   const layout = useLayoutStore()
   const fp = useFloorplanStore()
   const device = useDeviceConfig()
+  const theme = useThemeStore()
 
   let es: EventSource | null = null
   let retryTimer: ReturnType<typeof setTimeout> | null = null
@@ -38,6 +39,8 @@ export function useLiveSync() {
         // If configured status flipped (setup finished or factory reset),
         // reload the page so the setup gate re-evaluates cleanly.
         if (prev !== device.configured.value) location.reload()
+      } else if (data.type === 'preferences') {
+        await theme.pullPrefs().catch(() => {})
       }
     }
 

@@ -1,43 +1,8 @@
-[
-  {
-    "version": "2026.7.5",
-    "date": "2026-07-08",
-    "changes": [
-      "Live sync (SSE) actually works now — the previous release queued a warmup message before opening the stream, which blocked the response headers and prevented any events from reaching the browser.",
-      "Added a 25-second heartbeat so kiosk/proxy timeouts can't idle-drop the connection."
-    ]
-  },
-  {
-    "version": "2026.7.4",
-    "date": "2026-07-08",
-    "changes": [
-      "Live sync between browsers — layout, floorplan, and device-config changes now push instantly to every connected screen via server-sent events.",
-      "Local edits in progress (edit-mode / dirty stores) are never overwritten by a remote save."
-    ]
-  },
-  {
-    "version": "2026.7.3",
-    "date": "2026-07-08",
-    "changes": [
-      "Redesigned the first-launch setup screen for touchscreens — two-column layout on landscape, larger inputs, bigger tap targets."
-    ]
-  },
-  {
-    "version": "2026.7.2",
-    "date": "2026-07-08",
-    "changes": [
-      "Removed .env / .env.template — all configuration now lives in the first-launch setup screen.",
-      "Setup screen gained optional Toolbar PIN and WiFi QR (SSID / password / security / hidden) fields — Master-only; Slaves inherit both from the Master.",
-      "Server no longer reads any environment variables; HA credentials, WiFi, PIN and allowed LAN prefixes are persisted in config/device.json."
-    ]
-  },
+﻿[
   {
     "version": "2026.7.1",
     "date": "2026-07-08",
     "changes": [
-      "Added version watermark on the main screen — tap it to view the full changelog.",
-      "Introduced changelog.json as the single source of truth for release history baked into each Docker image.",
-      "Switched to year.month.version numbering (e.g. 2026.7.1).",
       "Initial HAIVE release — 3D Home Assistant interface for Raspberry Pi touchscreens."
     ]
   }

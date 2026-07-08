@@ -10,6 +10,7 @@ export type LiveEvent =
   | { type: 'layout' }
   | { type: 'floorplan' }
   | { type: 'device' }
+  | { type: 'preferences' }
 
 type Subscriber = (e: LiveEvent) => void
 

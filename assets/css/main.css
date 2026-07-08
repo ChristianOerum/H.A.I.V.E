@@ -155,3 +155,24 @@ html.light {
   }
 }
 
+@layer utilities {
+  /* Inverted corner masks: keep only the outer wedge of each 20x20 box so the
+     square appears as a rounded-corner cutout when placed over the viewport. */
+  .clip-inverted-cornerTL {
+    -webkit-mask: radial-gradient(circle 20px at 100% 100%, transparent 20px, #000 20.5px);
+            mask: radial-gradient(circle 20px at 100% 100%, transparent 20px, #000 20.5px);
+  }
+  .clip-inverted-cornerTR {
+    -webkit-mask: radial-gradient(circle 20px at 0% 100%, transparent 20px, #000 20.5px);
+            mask: radial-gradient(circle 20px at 0% 100%, transparent 20px, #000 20.5px);
+  }
+  .clip-inverted-cornerBL {
+    -webkit-mask: radial-gradient(circle 20px at 100% 0%, transparent 20px, #000 20.5px);
+            mask: radial-gradient(circle 20px at 100% 0%, transparent 20px, #000 20.5px);
+  }
+  .clip-inverted-cornerBR {
+    -webkit-mask: radial-gradient(circle 20px at 0% 0%, transparent 20px, #000 20.5px);
+            mask: radial-gradient(circle 20px at 0% 0%, transparent 20px, #000 20.5px);
+  }
+}
+

@@ -343,6 +343,88 @@ export const useThemeStore = defineStore('theme', {
       if (this.mode === 'auto') {
         this._startCycle()
       }
+
+      // Fetch shared prefs from the master (async — overrides localStorage
+      // once resolved). Silently ignored if offline / server unreachable.
+      this.pullPrefs().catch(() => {})
+    },
+
+    /**
+     * Serialise the persisted prefs and PUT to the server so every other
+     * screen (via SSE) picks them up. Fire-and-forget.
+     */
+    _pushPrefs() {
+      if (!import.meta.client) return
+      const payload = {
+        mode:           this.mode,
+        accentHue:      this.accentHueSaved,
+        accentSat:      this.accentSatSaved,
+        accentLit:      this.accentLitSaved,
+        darkVariant:    this.darkVariantSaved,
+        lightVariant:   this.lightVariantSaved,
+        customPalettes: this.customPalettes,
+      }
+      $fetch('/api/preferences', { method: 'PUT', body: payload }).catch(() => {})
+    },
+
+    /**
+     * Fetch shared prefs from the server and apply them locally, mirroring
+     * everything to localStorage so the next cold boot starts in-sync.
+     */
+    async pullPrefs() {
+      if (!import.meta.client) return
+      const prefs = await $fetch<Record<string, unknown>>('/api/preferences').catch(() => null)
+      if (!prefs) return
+
+      const wasAuto = this.mode === 'auto'
+      let changed = false
+
+      if (typeof prefs.mode === 'string' && ['light', 'dark', 'auto'].includes(prefs.mode) && prefs.mode !== this.mode) {
+        this.mode = prefs.mode as ThemeMode
+        localStorage.setItem(STORAGE_KEY, this.mode)
+        changed = true
+      }
+      if (typeof prefs.accentHue === 'number' && prefs.accentHue !== this.accentHueSaved) {
+        this.accentHue = this.accentHueSaved = prefs.accentHue as number
+        localStorage.setItem(ACCENT_KEY, String(prefs.accentHue))
+        changed = true
+      }
+      if (typeof prefs.accentSat === 'number' && prefs.accentSat !== this.accentSatSaved) {
+        this.accentSat = this.accentSatSaved = prefs.accentSat as number
+        localStorage.setItem(ACCENT_SAT_KEY, String(prefs.accentSat))
+        changed = true
+      }
+      if (typeof prefs.accentLit === 'number' && prefs.accentLit !== this.accentLitSaved) {
+        this.accentLit = this.accentLitSaved = prefs.accentLit as number
+        localStorage.setItem(ACCENT_LIT_KEY, String(prefs.accentLit))
+        changed = true
+      }
+      if (typeof prefs.darkVariant === 'string' && prefs.darkVariant !== this.darkVariantSaved) {
+        this.darkVariant = this.darkVariantSaved = prefs.darkVariant as string
+        localStorage.setItem(DARK_VAR_KEY, this.darkVariant)
+        changed = true
+      }
+      if (typeof prefs.lightVariant === 'string' && prefs.lightVariant !== this.lightVariantSaved) {
+        this.lightVariant = this.lightVariantSaved = prefs.lightVariant as string
+        localStorage.setItem(LIGHT_VAR_KEY, this.lightVariant)
+        changed = true
+      }
+      if (Array.isArray(prefs.customPalettes)) {
+        this.customPalettes = prefs.customPalettes as CustomPalette[]
+        localStorage.setItem(CUSTOM_PALETTES_KEY, JSON.stringify(this.customPalettes))
+        changed = true
+      }
+
+      if (!changed) return
+
+      // Re-apply everything based on the (possibly new) mode.
+      if (this.mode === 'auto') {
+        if (!wasAuto) this._startCycle()
+        this._applyBrightness(this.brightness)
+      } else {
+        if (wasAuto) this._stopCycle()
+        this.apply()
+      }
     },
 
     set(mode: ThemeMode) {
@@ -359,6 +441,7 @@ export const useThemeStore = defineStore('theme', {
         if (wasAuto) this._stopCycle()
         this.apply()
       }
+      this._pushPrefs()
     },
 
     /** Preview accent hue live — resets S/L to defaults (used by presets). */
@@ -395,6 +478,7 @@ export const useThemeStore = defineStore('theme', {
       this.accentHueSaved = this.accentHue
       this.accentSatSaved = this.accentSat
       this.accentLitSaved = this.accentLit
+      this._pushPrefs()
     },
 
     /** Set dark palette variant and apply immediately. */
@@ -419,6 +503,7 @@ export const useThemeStore = defineStore('theme', {
       }
       this.darkVariantSaved  = this.darkVariant
       this.lightVariantSaved = this.lightVariant
+      this._pushPrefs()
     },
 
     // ── Custom palette CRUD ──────────────────────────────────────────────────
@@ -426,6 +511,7 @@ export const useThemeStore = defineStore('theme', {
     _saveCustomPalettes() {
       if (typeof window !== 'undefined')
         localStorage.setItem(CUSTOM_PALETTES_KEY, JSON.stringify(this.customPalettes))
+      this._pushPrefs()
     },
 
     /** Resolve the active dark palette (preset or custom). */
