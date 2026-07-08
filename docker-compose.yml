@@ -34,6 +34,10 @@ services:
     image: containrrr/watchtower:latest
     container_name: haive-watchtower
     restart: unless-stopped
+    environment:
+      # Modern Docker Engine (25+) rejects Watchtower's default API 1.25; pin
+      # to a version the daemon speaks (any 1.40–1.47 works).
+      - DOCKER_API_VERSION=1.44
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     command: >-

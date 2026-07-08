@@ -1,5 +1,12 @@
 [
   {
+    "version": "2026.7.3",
+    "date": "2026-07-08",
+    "changes": [
+      "Redesigned the first-launch setup screen for touchscreens — two-column layout on landscape, larger inputs, bigger tap targets."
+    ]
+  },
+  {
     "version": "2026.7.2",
     "date": "2026-07-08",
     "changes": [
