@@ -100,20 +100,13 @@ html.light {
     -webkit-tap-highlight-color: transparent;
   }
 
-  /* Smooth theme colour transitions on every element so the whole UI
-     morphs together. Only colour-related properties are listed so
-     positional / transform animations are unaffected. */
-  *,
-  *::before,
-  *::after {
-    transition:
-      color          0.35s ease,
-      background-color 0.35s ease,
-      border-color   0.35s ease,
-      fill           0.35s ease,
-      stroke         0.35s ease,
-      box-shadow     0.35s ease;
-  }
+  /* Theme cross-fade is handled by the View Transitions API in
+     stores/theme.ts (::view-transition rules below). A universal
+     `*` transition on colour/box-shadow properties makes every
+     button/hover repaint animate — cheap on desktop, but on the Pi
+     it competes with the WebGL context and makes UI input feel laggy.
+     Individual components can opt in via `transition-colors` when
+     they genuinely need it (see .btn-touch). */
 
   /* View Transitions cross-fade — fires for manual toggle and solar cycle.
      Duration is set via --theme-fade-ms so the store can control it.

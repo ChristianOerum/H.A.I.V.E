@@ -62,7 +62,7 @@ const keys = ['1','2','3','4','5','6','7','8','9','','0','DEL'] as const
   <!-- Backdrop -->
   <Teleport to="body">
     <div
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
       @click.self="emit('close')"
     >
       <div

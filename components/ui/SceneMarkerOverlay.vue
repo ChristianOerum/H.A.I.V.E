@@ -27,8 +27,6 @@ function getIcon(entityId: string): string {
 
 interface MarkerInfo {
   entityId: string
-  x: number
-  y: number
   color: string
   label: string
   active: boolean
@@ -36,21 +34,22 @@ interface MarkerInfo {
   icon: string
 }
 
+// Visual info re-computes only when placements, entity states, or selection
+// change — NOT when the projected screen position changes. The projector
+// (SceneProjector.vue) rewrites `positions` every render frame, so keeping
+// position out of this computed avoids running the adapter lookups + array
+// rebuild 60×/sec, which was starving UI input on the Pi.
 const markers = computed<MarkerInfo[]>(() => {
   return layout.placements
     .map((p) => {
-      const pos = positions.value[p.entity_id]
-      if (!pos?.visible) return null
       const entity = entities.get(p.entity_id)
       if (!entity) return null
-      const adapter = entity ? getAdapter(entity) : undefined
-      const visual = adapter && entity
+      const adapter = getAdapter(entity)
+      const visual = adapter
         ? adapter.getDisplayState(entity)
         : { color: '#888', intensity: 0.3, label: '?', active: false }
       return {
         entityId: p.entity_id,
-        x: pos.x,
-        y: pos.y,
         color: (!p.entity_id.startsWith('light.') && p.color) ? p.color : visual.color,
         label: visual.label,
         active: visual.active,
@@ -121,6 +120,29 @@ function onPointerCancel(entityId: string) {
   cancelPress(entityId)
   longPressTriggered.delete(entityId)
 }
+
+// Imperative per-frame transform updates. `positions` is rewritten every
+// render frame by SceneProjector; watching it would re-render the whole
+// overlay 60×/sec. Instead we keep per-entity element refs and set
+// `transform` / visibility directly on the DOM, bypassing Vue reactivity.
+const markerEls = new Map<string, HTMLElement>()
+function setMarkerRef(entityId: string) {
+  return (el: Element | ComponentPublicInstance | null) => {
+    if (el instanceof HTMLElement) markerEls.set(entityId, el)
+    else markerEls.delete(entityId)
+  }
+}
+watch(positions, (pos) => {
+  for (const [id, el] of markerEls) {
+    const p = pos[id]
+    if (!p || !p.visible) {
+      el.style.display = 'none'
+      continue
+    }
+    el.style.display = ''
+    el.style.transform = `translate(${p.x}px, ${p.y}px)`
+  }
+}, { flush: 'post' })
 </script>
 
 <template>
@@ -130,8 +152,9 @@ function onPointerCancel(entityId: string) {
     <div
       v-for="m in markers"
       :key="m.entityId"
+      :ref="setMarkerRef(m.entityId)"
       class="marker pointer-events-auto"
-      :style="{ transform: `translate(${m.x}px, ${m.y}px)` }"
+      style="display: none"
       @pointerdown="onPointerDown(m.entityId, $event)"
       @pointerup="onPointerUp(m.entityId, $event)"
       @pointercancel="onPointerCancel(m.entityId)"
