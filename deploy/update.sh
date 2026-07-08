@@ -24,7 +24,13 @@ fi
 
 echo "==> Pulling latest repo changes…"
 if [ -d "${REPO_DIR}/.git" ]; then
-  git -C "${REPO_DIR}" pull --ff-only
+  # Run git as the invoking user so .git/objects don't end up owned by root
+  # (which would break subsequent unprivileged `git pull` invocations).
+  if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
+    sudo -u "${SUDO_USER}" git -C "${REPO_DIR}" pull --ff-only
+  else
+    git -C "${REPO_DIR}" pull --ff-only
+  fi
 else
   echo "    (${REPO_DIR} is not a git checkout — skipping git pull.)"
 fi
