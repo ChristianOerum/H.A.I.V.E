@@ -88,27 +88,9 @@ export default defineNuxtConfig({
   },
 
   runtimeConfig: {
-    // Server-only — never exposed to the client bundle.
-    haUrl: process.env.HA_URL || 'http://homeassistant.local:8123',
-    haToken: process.env.HA_TOKEN || '',
-    // WiFi credentials surfaced via QR on the kiosk. Server-side only; the
-    // public flag below lets the UI hide the button when nothing is configured.
-    wifiSsid: process.env.WIFI_SSID || '',
-    wifiPassword: process.env.WIFI_PASSWORD || '',
-    wifiSecurity: process.env.WIFI_SECURITY || 'WPA',
-    wifiHidden: process.env.WIFI_HIDDEN === 'true',
-    // Restrict /api/ha/* to clients on these CIDR-prefixed local networks.
-    allowedLocalPrefixes: (process.env.ALLOWED_LOCAL_PREFIXES || '127.,192.168.,10.,172.').split(','),
-    // PIN required to unlock the toolbar controls. Set AUTH_PIN in .env.
-    authPin: process.env.AUTH_PIN || '',
-    public: {
-      // Public HA URL exposed so the browser can open a WS directly to HA.
-      haUrl: process.env.HA_URL || 'http://homeassistant.local:8123',
-      // True when HA_TOKEN is configured — lets the UI skip the setup hint.
-      haConfigured: !!process.env.HA_TOKEN,
-      // True when AUTH_PIN is set — controls whether toolbar lock is enforced.
-      authEnabled: !!process.env.AUTH_PIN,
-    },
+    // All runtime configuration (HA URL/token, WiFi credentials, toolbar PIN,
+    // allowed LAN prefixes) is stored in config/device.json and written by the
+    // first-launch setup screen. No environment variables are used or needed.
   },
 
   nitro: {

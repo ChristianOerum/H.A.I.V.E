@@ -1,5 +1,14 @@
 export type DeviceRole = 'master' | 'slave'
 
+export type WifiSecurity = 'WPA' | 'WEP' | 'NONE'
+
+export interface PublicWifiInfo {
+  configured: boolean
+  ssid: string
+  security: WifiSecurity
+  hidden: boolean
+}
+
 export interface PublicDeviceConfig {
   configured: boolean
   role: DeviceRole
@@ -7,6 +16,8 @@ export interface PublicDeviceConfig {
   allowedLocalPrefixes: string[]
   masterUrl: string
   haConfigured: boolean
+  authEnabled: boolean
+  wifi: PublicWifiInfo
 }
 
 export interface DeviceSetupPayload {
@@ -15,6 +26,13 @@ export interface DeviceSetupPayload {
   haToken?: string
   allowedLocalPrefixes?: string
   masterUrl?: string
+  authPin?: string
+  wifi?: {
+    ssid: string
+    password: string
+    security: WifiSecurity
+    hidden: boolean
+  }
 }
 
 const DEFAULT: PublicDeviceConfig = {
@@ -24,6 +42,8 @@ const DEFAULT: PublicDeviceConfig = {
   allowedLocalPrefixes: ['127.', '192.168.', '10.', '172.'],
   masterUrl: '',
   haConfigured: false,
+  authEnabled: false,
+  wifi: { configured: false, ssid: '', security: 'WPA', hidden: false },
 }
 
 /**
@@ -53,6 +73,7 @@ export function useDeviceConfig() {
 
   const configured = computed(() => config.value.configured)
   const role = computed(() => config.value.role)
+  const authEnabled = computed(() => config.value.authEnabled)
 
-  return { config, loaded, configured, role, refresh, save, factoryReset }
+  return { config, loaded, configured, role, authEnabled, refresh, save, factoryReset }
 }

@@ -24,7 +24,7 @@ fi
 
 # Wait until the server responds before opening the browser (avoids error page).
 for _ in $(seq 1 60); do
-  if curl -fsS "http://localhost:${HAIVE_PORT:-3000}/" >/dev/null 2>&1; then
+  if curl -fsS "http://localhost:3000/" >/dev/null 2>&1; then
     break
   fi
   sleep 2

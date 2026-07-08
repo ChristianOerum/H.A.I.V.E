@@ -2,13 +2,14 @@
  * Manages toolbar authentication state.
  * Unlocked state is persisted in sessionStorage so it survives page navigation
  * but resets when the tab/kiosk session is closed or after AUTH_TTL_MS.
- * When AUTH_PIN is not configured, auth is disabled and unlocked is always true.
+ * When no PIN is configured in the setup screen, auth is disabled and unlocked
+ * is always true.
  */
 const AUTH_TTL_MS = 60 * 60 * 1000 // 1 hour
 
 export const useAuth = () => {
-  const { public: { authEnabled } } = useRuntimeConfig()
-  const unlocked = useState<boolean>('auth:unlocked', () => !authEnabled)
+  const { authEnabled } = useDeviceConfig()
+  const unlocked = useState<boolean>('auth:unlocked', () => !authEnabled.value)
 
   const SESSION_KEY = 'haive:unlocked'
   let expiryTimer: ReturnType<typeof setTimeout> | null = null

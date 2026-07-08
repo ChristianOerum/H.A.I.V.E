@@ -11,7 +11,7 @@
 - **2D floorplan editor** — drag vertices, add/remove rooms, set per-wall thickness, place doors & windows, hide individual walls in 3D
 - **Furniture library** — JSON-defined furniture items placed and scaled in the 3D scene
 - **Saved camera views** — save/lock a camera position; auto-returns after 30 s of inactivity
-- **PIN keypad authentication** — optional PIN lock for the editor toolbar (configurable via `AUTH_PIN` env var)
+- **PIN keypad authentication** — optional PIN lock for the editor toolbar, set from the first-launch setup screen
 - **WiFi QR code** — one-tap QR overlay to share the local network
 - **Custom theme palette editor** — accent hue picker, light/dark/auto mode, scene lighting controls, saveable custom palettes
 - Runs as an SSR Nitro server on the Pi with Chromium kiosk
@@ -29,17 +29,18 @@ Want to explore without a real Home Assistant? Just finish setup as a **Master**
 
 ## First-time setup
 
-On first launch the app shows a **setup screen** — no config files to edit. You choose a **role**:
+On first launch the app shows a **setup screen** — no config files to edit, no environment variables to set. You choose a **role**:
 
 - **Master** — enter your **HA URL** and **token** (HA → Profile → Long-Lived Access Tokens). This device connects to Home Assistant and holds all the data.
 - **Slave** — enter the **Master's URL** (e.g. `http://192.168.1.50:3000`). It just mirrors the Master, so every screen shows the same thing.
+
+The setup screen also lets you optionally configure a **toolbar PIN** (locks the editor controls) and **WiFi QR credentials** (shown to guests via the corner WiFi button).
 
 Settings are saved on the device. To start over, use **Factory Reset** (Settings → Preferences tab), which returns you to this screen. Your floorplan and device layout are kept.
 
 ## Run with Docker (recommended for a permanent install)
 
 ```bash
-cp .env.template .env      # optional
 docker compose up -d
 ```
 
@@ -68,7 +69,7 @@ Reboot and the setup screen shows on the display. Done.
 ```bash
 npm install
 npm run build
-# Copy .output, .env, config/, deploy/ to /home/pi/haive, then:
+# Copy .output, config/, deploy/ to /home/pi/haive, then:
 sudo cp deploy/haive.service deploy/kiosk.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now haive.service kiosk.service
@@ -76,10 +77,10 @@ sudo systemctl enable --now haive.service kiosk.service
 </details>
 
 <details>
-<summary>Config files &amp; env vars</summary>
+<summary>Config files</summary>
 
-- Setup is stored in `config/device.json` (written by the setup screen).
-- `.env` (optional) can pre-fill defaults: `HA_URL`, `HA_TOKEN`, `ALLOWED_LOCAL_PREFIXES`, `AUTH_PIN`, `WIFI_SSID` / `WIFI_PASSWORD`, and Docker vars `HAIVE_IMAGE` / `HAIVE_PORT` / `WATCHTOWER_INTERVAL`. If `HA_TOKEN` is set here, the setup screen is skipped.
+- Everything the app needs is entered on the first-launch setup screen — there are no environment variables to set.
+- `config/device.json` — HA URL/token, role, WiFi QR credentials, toolbar PIN, allowed LAN prefixes (written by the setup screen).
 - `config/entities.json` — device placements. `config/floorplan.json` — rooms/walls/openings. `config/furnitureLibrary/` — furniture definitions.
 - Handy URLs: `?mock=1` (force mock), `?kiosk=1` (hide cursor).
 </details>
@@ -121,7 +122,7 @@ sudo systemctl enable --now haive.service kiosk.service
   - `StatusBar.vue`, `BottomSheet.vue`, `DeviceControlPanel.vue` — core UI chrome.
 - `server/api/ha/token.get.ts` — mints HA token to LAN clients only.
 - `server/api/config.*.ts` — read/write runtime device config (first-launch + factory reset).
-- `server/utils/deviceConfig.ts` — persisted device config (role, HA creds, master URL).
+- `server/utils/deviceConfig.ts` — persisted device config (role, HA creds, master URL, PIN, WiFi).
 - `server/utils/lanGuard.ts` — shared LAN-only request guard.
 - `server/utils/masterProxy.ts` — forwards Slave API requests to the Master.
 - `server/api/layout.ts` — read/write `config/entities.json`.

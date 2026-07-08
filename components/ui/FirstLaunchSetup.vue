@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Icon } from '@iconify/vue'
+import type { WifiSecurity } from '~/composables/useDeviceConfig'
 
 const emit = defineEmits<{ done: [] }>()
 
@@ -13,11 +14,26 @@ const allowedLocalPrefixes = ref(
 )
 const masterUrl = ref(config.value.masterUrl || '')
 
+// PIN (optional) — empty means the toolbar lock is disabled.
+const authPin = ref('')
+
+// WiFi (optional) — empty ssid means the WiFi QR button stays hidden.
+const wifiSsid = ref(config.value.wifi?.ssid ?? '')
+const wifiPassword = ref('')
+const wifiSecurity = ref<WifiSecurity>(config.value.wifi?.security ?? 'WPA')
+const wifiHidden = ref(!!config.value.wifi?.hidden)
+
 const saving = ref(false)
 const error = ref('')
 
+const pinValid = computed(() => {
+  const v = authPin.value.trim()
+  return v.length === 0 || (v.length >= 4 && /^\d+$/.test(v))
+})
+
 const canSubmit = computed(() => {
   if (saving.value) return false
+  if (!pinValid.value) return false
   if (role.value === 'master') return !!haUrl.value.trim() && !!haToken.value.trim()
   return /^https?:\/\/.+/i.test(masterUrl.value.trim())
 })
@@ -33,6 +49,13 @@ async function submit() {
       haToken: haToken.value.trim(),
       allowedLocalPrefixes: allowedLocalPrefixes.value.trim(),
       masterUrl: masterUrl.value.trim(),
+      authPin: authPin.value.trim(),
+      wifi: {
+        ssid: wifiSsid.value.trim(),
+        password: wifiPassword.value,
+        security: wifiSecurity.value,
+        hidden: wifiHidden.value,
+      },
     })
     emit('done')
   } catch (e: unknown) {
@@ -139,6 +162,80 @@ async function submit() {
           />
           <span class="text-[11px] text-fg-muted">Address of the Master HAIVE server on your network.</span>
         </label>
+        <p class="text-[11px] text-fg-muted leading-snug">
+          Slaves inherit the toolbar PIN and WiFi QR credentials from the Master, so you only configure them once.
+        </p>
+      </div>
+
+      <!-- Optional: toolbar PIN (Master only — Slaves inherit) -->
+      <div v-if="role === 'master'" class="flex flex-col gap-4 pt-2 border-t border-bg-elevated">
+        <div class="flex items-center gap-2">
+          <Icon icon="mdi:lock-outline" width="18" height="18" class="text-fg-muted" />
+          <span class="text-sm font-semibold">Toolbar PIN <span class="text-fg-muted font-normal">(optional)</span></span>
+        </div>
+        <label class="flex flex-col gap-1.5">
+          <span class="text-[11px] text-fg-muted uppercase tracking-wide">PIN</span>
+          <input
+            v-model="authPin"
+            type="password"
+            inputmode="numeric"
+            autocomplete="new-password"
+            placeholder="Leave blank to disable lock"
+            class="w-full rounded-xl border bg-bg px-3 py-2.5 text-sm text-fg focus:outline-none focus:border-accent/60"
+            :class="pinValid ? 'border-bg-elevated' : 'border-red-400/70'"
+          />
+          <span v-if="!pinValid" class="text-[11px] text-red-500">PIN must be at least 4 digits.</span>
+          <span v-else class="text-[11px] text-fg-muted">Locks the editor toolbar behind a numeric PIN.</span>
+        </label>
+      </div>
+
+      <!-- Optional: WiFi QR credentials (Master only — Slaves inherit) -->
+      <div v-if="role === 'master'" class="flex flex-col gap-4 pt-2 border-t border-bg-elevated">
+        <div class="flex items-center gap-2">
+          <Icon icon="mdi:wifi" width="18" height="18" class="text-fg-muted" />
+          <span class="text-sm font-semibold">WiFi QR <span class="text-fg-muted font-normal">(optional)</span></span>
+        </div>
+        <label class="flex flex-col gap-1.5">
+          <span class="text-[11px] text-fg-muted uppercase tracking-wide">Network name (SSID)</span>
+          <input
+            v-model="wifiSsid"
+            type="text"
+            autocomplete="off"
+            placeholder="Leave blank to hide the WiFi button"
+            class="w-full rounded-xl border border-bg-elevated bg-bg px-3 py-2.5 text-sm text-fg focus:outline-none focus:border-accent/60"
+          />
+        </label>
+        <div v-if="wifiSsid.trim()" class="flex flex-col gap-4">
+          <label class="flex flex-col gap-1.5">
+            <span class="text-[11px] text-fg-muted uppercase tracking-wide">Security</span>
+            <select
+              v-model="wifiSecurity"
+              class="w-full rounded-xl border border-bg-elevated bg-bg px-3 py-2.5 text-sm text-fg focus:outline-none focus:border-accent/60"
+            >
+              <option value="WPA">WPA / WPA2 / WPA3</option>
+              <option value="WEP">WEP</option>
+              <option value="NONE">None (open)</option>
+            </select>
+          </label>
+          <label v-if="wifiSecurity !== 'NONE'" class="flex flex-col gap-1.5">
+            <span class="text-[11px] text-fg-muted uppercase tracking-wide">Password</span>
+            <input
+              v-model="wifiPassword"
+              type="password"
+              autocomplete="new-password"
+              placeholder="WiFi password"
+              class="w-full rounded-xl border border-bg-elevated bg-bg px-3 py-2.5 text-sm text-fg focus:outline-none focus:border-accent/60"
+            />
+          </label>
+          <label class="flex items-center gap-2 text-sm">
+            <input
+              v-model="wifiHidden"
+              type="checkbox"
+              class="h-4 w-4 rounded border-bg-elevated text-accent focus:ring-accent/40"
+            />
+            <span>Hidden network</span>
+          </label>
+        </div>
       </div>
 
       <p v-if="error" class="text-sm text-red-400 text-center">{{ error }}</p>

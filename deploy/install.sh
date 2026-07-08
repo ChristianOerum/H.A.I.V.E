@@ -42,8 +42,6 @@ echo "==> Copying deployment files to ${INSTALL_DIR}…"
 mkdir -p "${INSTALL_DIR}"
 cp -r "${REPO_DIR}/deploy" "${INSTALL_DIR}/"
 cp "${REPO_DIR}/docker-compose.yml" "${INSTALL_DIR}/"
-[ -f "${REPO_DIR}/.env" ] && cp "${REPO_DIR}/.env" "${INSTALL_DIR}/.env" || \
-  { [ -f "${INSTALL_DIR}/.env" ] || cp "${REPO_DIR}/.env.template" "${INSTALL_DIR}/.env"; }
 chmod +x "${INSTALL_DIR}/deploy/"*.sh
 
 # ── 4. systemd services ──────────────────────────────────────

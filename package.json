@@ -11,8 +11,8 @@
     "start": "node .output/server/index.mjs",
     "postinstall": "nuxt prepare",
     "typecheck": "nuxt typecheck",
-    "docker:build": "docker build -t haive:%npm_package_version% -t haive:latest .",
-    "docker:build:sh": "docker build -t haive:$npm_package_version -t haive:latest ."
+    "image:build": "powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy/publish-image.ps1",
+    "image:push": "powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy/publish-image.ps1 -Push"
   },
   "dependencies": {
     "@iconify-json/heroicons": "^1.2.3",

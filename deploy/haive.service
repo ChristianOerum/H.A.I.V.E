@@ -7,7 +7,6 @@ Wants=network-online.target
 Type=simple
 User=pi
 WorkingDirectory=/home/pi/haive
-EnvironmentFile=/home/pi/haive/.env
 ExecStart=/usr/bin/node /home/pi/haive/.output/server/index.mjs
 Restart=on-failure
 RestartSec=5

@@ -2,14 +2,14 @@
 import type { HassEntity } from 'home-assistant-js-websocket'
 
 const props = defineProps<{ entity: HassEntity }>()
-const config = useRuntimeConfig()
+const { config: deviceConfig } = useDeviceConfig()
 
 // Live snapshot URL exposed by HA — requires token; for kiosk use we pass it
 // via the camera_proxy_stream or entity_picture. Here we use entity_picture.
 const src = computed(() => {
   const pic = props.entity.attributes.entity_picture
   if (!pic) return ''
-  return pic.startsWith('http') ? pic : `${config.public.haUrl}${pic}`
+  return pic.startsWith('http') ? pic : `${deviceConfig.value.haUrl}${pic}`
 })
 </script>
 

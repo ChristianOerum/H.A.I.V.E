@@ -38,7 +38,7 @@ const statusColor = computed(() => {
   }
 })
 
-const { public: { authEnabled } } = useRuntimeConfig()
+const { authEnabled } = useDeviceConfig()
 const showKeypad = ref(false)
 const openKeypad = () => { if (!unlocked.value) showKeypad.value = true }
 const onKeypadClose = () => { showKeypad.value = false }

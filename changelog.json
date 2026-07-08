@@ -1,5 +1,14 @@
 [
   {
+    "version": "2026.7.2",
+    "date": "2026-07-08",
+    "changes": [
+      "Removed .env / .env.template — all configuration now lives in the first-launch setup screen.",
+      "Setup screen gained optional Toolbar PIN and WiFi QR (SSID / password / security / hidden) fields — Master-only; Slaves inherit both from the Master.",
+      "Server no longer reads any environment variables; HA credentials, WiFi, PIN and allowed LAN prefixes are persisted in config/device.json."
+    ]
+  },
+  {
     "version": "2026.7.1",
     "date": "2026-07-08",
     "changes": [

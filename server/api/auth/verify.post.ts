@@ -1,12 +1,18 @@
+import { readDeviceConfig } from '~~/server/utils/deviceConfig'
+import { proxyToMaster } from '~~/server/utils/masterProxy'
+
 export default defineEventHandler(async (event) => {
-  const config = useRuntimeConfig()
   const body = await readBody<{ pin: string }>(event)
 
   if (!body?.pin || typeof body.pin !== 'string') {
     throw createError({ statusCode: 400, message: 'PIN required' })
   }
 
-  const configuredPin = config.authPin
+  // Slaves have no PIN of their own — verify against the Master.
+  const proxied = await proxyToMaster(event, '/api/auth/verify')
+  if (proxied !== null) return proxied
+
+  const { authPin: configuredPin } = await readDeviceConfig()
   if (!configuredPin) {
     // No PIN configured — authentication not enabled; deny access.
     throw createError({ statusCode: 503, message: 'Authentication not configured' })
