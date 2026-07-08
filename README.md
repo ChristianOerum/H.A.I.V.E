@@ -68,10 +68,10 @@ Reboot and the setup screen shows on the display. Done.
 ```bash
 npm install
 npm run build
-# Copy .output, .env, config/, deploy/ to /home/pi/CoveHome, then:
-sudo cp deploy/covehome.service deploy/kiosk.service /etc/systemd/system/
+# Copy .output, .env, config/, deploy/ to /home/pi/haive, then:
+sudo cp deploy/haive.service deploy/kiosk.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now covehome.service kiosk.service
+sudo systemctl enable --now haive.service kiosk.service
 ```
 </details>
 

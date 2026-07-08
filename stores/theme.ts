@@ -2,14 +2,14 @@ import { defineStore } from 'pinia'
 
 export type ThemeMode = 'light' | 'dark' | 'auto'
 
-const STORAGE_KEY    = 'cove.theme'
-const COORD_KEY      = 'cove.coords'
-const ACCENT_KEY     = 'cove.accentHue'
-const ACCENT_SAT_KEY = 'cove.accentSat'
-const ACCENT_LIT_KEY = 'cove.accentLit'
-const DARK_VAR_KEY   = 'cove.darkVariant'
-const LIGHT_VAR_KEY  = 'cove.lightVariant'
-const CUSTOM_PALETTES_KEY = 'cove.customPalettes'
+const STORAGE_KEY    = 'haive.theme'
+const COORD_KEY      = 'haive.coords'
+const ACCENT_KEY     = 'haive.accentHue'
+const ACCENT_SAT_KEY = 'haive.accentSat'
+const ACCENT_LIT_KEY = 'haive.accentLit'
+const DARK_VAR_KEY   = 'haive.darkVariant'
+const LIGHT_VAR_KEY  = 'haive.lightVariant'
+const CUSTOM_PALETTES_KEY = 'haive.customPalettes'
 
 // Default teal hue (≈174°) with default dark-mode S/L
 const DEFAULT_ACCENT_HUE = 174

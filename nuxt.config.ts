@@ -31,7 +31,7 @@ export default defineNuxtConfig({
         {
           innerHTML: `(function(){try{
   var root=document.documentElement,ls=localStorage;
-  var mode=ls.getItem('cove.theme')||'auto',dark;
+  var mode=ls.getItem('haive.theme')||'auto',dark;
   if(mode==='dark'){dark=true}
   else if(mode==='light'){dark=false}
   else{var hr=new Date().getHours();dark=hr<6||hr>=20}
@@ -46,14 +46,14 @@ export default defineNuxtConfig({
     white:{bg:'255 255 255',bp:'245 245 247',be:'229 229 235',fg:'24 24 27', fm:'113 113 122'},
     beige:{bg:'237 228 210',bp:'224 213 190',be:'207 193 166',fg:'41 37 36',fm:'120 113 108'}
   };
-  var vk=dark?(ls.getItem('cove.darkVariant')||'slate'):(ls.getItem('cove.lightVariant')||'warm');
+  var vk=dark?(ls.getItem('haive.darkVariant')||'slate'):(ls.getItem('haive.lightVariant')||'warm');
   var pal=dark?(dk[vk]||dk.slate):(lk[vk]||lk.warm);
   root.style.setProperty('--bg',pal.bg);root.style.setProperty('--bg-panel',pal.bp);
   root.style.setProperty('--bg-elevated',pal.be);root.style.setProperty('--fg',pal.fg);
   root.style.setProperty('--fg-muted',pal.fm);
   function h2r(p,q,t){if(t<0)t+=1;if(t>1)t-=1;if(t<1/6)return p+(q-p)*6*t;if(t<1/2)return q;if(t<2/3)return p+(q-p)*(2/3-t)*6;return p}
   function rgb(h,s,l){h/=360;s/=100;l/=100;var rv,g,b;if(s===0){rv=g=b=l}else{var q=l<.5?l*(1+s):l+s-l*s,p=2*l-q;rv=h2r(p,q,h+1/3);g=h2r(p,q,h);b=h2r(p,q,h-1/3)}return Math.round(rv*255)+' '+Math.round(g*255)+' '+Math.round(b*255)}
-  var aH=parseInt(ls.getItem('cove.accentHue')||'',10),aS=parseInt(ls.getItem('cove.accentSat')||'',10),aL=parseInt(ls.getItem('cove.accentLit')||'',10);
+  var aH=parseInt(ls.getItem('haive.accentHue')||'',10),aS=parseInt(ls.getItem('haive.accentSat')||'',10),aL=parseInt(ls.getItem('haive.accentLit')||'',10);
   if(!isNaN(aH)&&!isNaN(aS)&&!isNaN(aL)){
     var ss=dark?aS:Math.round(aS*(70/78)),ll=dark?aL:Math.round(aL*(42/62));
     root.style.setProperty('--accent',rgb(aH,ss,ll));

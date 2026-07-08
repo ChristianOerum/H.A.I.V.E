@@ -6,9 +6,9 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=pi
-WorkingDirectory=/home/pi/CoveHome
-EnvironmentFile=/home/pi/CoveHome/.env
-ExecStart=/usr/bin/node /home/pi/CoveHome/.output/server/index.mjs
+WorkingDirectory=/home/pi/haive
+EnvironmentFile=/home/pi/haive/.env
+ExecStart=/usr/bin/node /home/pi/haive/.output/server/index.mjs
 Restart=on-failure
 RestartSec=5
 Environment=NODE_ENV=production

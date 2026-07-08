@@ -1,7 +1,7 @@
 [Unit]
 Description=HAIVE Chromium kiosk
-After=graphical.target covehome.service
-Wants=covehome.service
+After=graphical.target haive.service
+Wants=haive.service
 
 [Service]
 Type=simple

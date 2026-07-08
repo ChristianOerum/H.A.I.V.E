@@ -10,9 +10,9 @@ const theme = useThemeStore()
 // Pre-populate accent from localStorage before watchEffect fires with defaults,
 // preventing a brief flash of the default accent color on load.
 if (import.meta.client) {
-  const h = parseInt(localStorage.getItem('cove.accentHue') ?? '', 10)
-  const s = parseInt(localStorage.getItem('cove.accentSat') ?? '', 10)
-  const l = parseInt(localStorage.getItem('cove.accentLit') ?? '', 10)
+  const h = parseInt(localStorage.getItem('haive.accentHue') ?? '', 10)
+  const s = parseInt(localStorage.getItem('haive.accentSat') ?? '', 10)
+  const l = parseInt(localStorage.getItem('haive.accentLit') ?? '', 10)
   if (!isNaN(h)) theme.accentHue = h
   if (!isNaN(s)) theme.accentSat = s
   if (!isNaN(l)) theme.accentLit = l
