@@ -1,5 +1,13 @@
 [
   {
+    "version": "2026.7.4",
+    "date": "2026-07-08",
+    "changes": [
+      "Live sync between browsers — layout, floorplan, and device-config changes now push instantly to every connected screen via server-sent events.",
+      "Local edits in progress (edit-mode / dirty stores) are never overwritten by a remote save."
+    ]
+  },
+  {
     "version": "2026.7.3",
     "date": "2026-07-08",
     "changes": [

@@ -2,6 +2,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { existsSync } from 'node:fs'
 import { proxyToMaster } from '~~/server/utils/masterProxy'
+import { publish } from '~~/server/utils/eventBus'
 
 const LAYOUT_PATH = resolve(process.cwd(), 'config/entities.json')
 
@@ -31,6 +32,7 @@ export default defineEventHandler(async (event) => {
     }
     await mkdir(dirname(LAYOUT_PATH), { recursive: true })
     await writeFile(LAYOUT_PATH, JSON.stringify(body, null, 2), 'utf8')
+    publish({ type: 'layout' })
     return { ok: true }
   }
 

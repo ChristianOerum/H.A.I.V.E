@@ -5,6 +5,7 @@ const fp = useFloorplanStore()
 const theme = useThemeStore()
 const { start } = useHomeAssistant()
 const device = useDeviceConfig()
+useLiveSync()
 
 useHead({
   title: 'H.A.I.V.E.',

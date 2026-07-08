@@ -5,6 +5,7 @@ import {
   type DeviceRole,
   type WifiSecurity,
 } from '~~/server/utils/deviceConfig'
+import { publish } from '~~/server/utils/eventBus'
 
 interface SetupWifi {
   ssid?: string
@@ -69,6 +70,7 @@ export default defineEventHandler(async (event) => {
       authPin,
       wifi,
     })
+    publish({ type: 'device' })
     return { ok: true, role: cfg.role }
   }
 
@@ -91,5 +93,6 @@ export default defineEventHandler(async (event) => {
     authPin: '',
     wifi: { ssid: '', password: '', security: 'WPA', hidden: false },
   })
+  publish({ type: 'device' })
   return { ok: true, role: cfg.role }
 })

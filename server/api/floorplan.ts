@@ -2,6 +2,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { existsSync } from 'node:fs'
 import { proxyToMaster } from '~~/server/utils/masterProxy'
+import { publish } from '~~/server/utils/eventBus'
 
 const FLOORPLAN_PATH = resolve(process.cwd(), 'config/floorplan.json')
 
@@ -33,6 +34,7 @@ export default defineEventHandler(async (event) => {
     }
     await mkdir(dirname(FLOORPLAN_PATH), { recursive: true })
     await writeFile(FLOORPLAN_PATH, JSON.stringify(body, null, 2), 'utf8')
+    publish({ type: 'floorplan' })
     return { ok: true }
   }
 
