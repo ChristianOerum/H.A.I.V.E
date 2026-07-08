@@ -1,36 +1,26 @@
-import { getRequestIP, createError } from 'h3'
+import { assertLanClient } from '~~/server/utils/lanGuard'
+import { readDeviceConfig } from '~~/server/utils/deviceConfig'
+import { proxyToMaster } from '~~/server/utils/masterProxy'
 
 /**
  * Returns the HA URL + long-lived token to LAN clients only.
- * Token stays on the server side until requested by a trusted local client.
+ *
+ * - Master: serves its own persisted (or env-provided) HA credentials.
+ * - Slave: proxies to the Master so every screen uses the same connection.
  */
-export default defineEventHandler((event) => {
-  const config = useRuntimeConfig()
-  const rawIp = getRequestIP(event, { xForwardedFor: false }) || ''
-  // Normalize IPv6-mapped IPv4 (::ffff:192.168.1.5 -> 192.168.1.5)
-  const ip = rawIp.replace(/^::ffff:/, '')
+export default defineEventHandler(async (event) => {
+  await assertLanClient(event)
 
-  const allowed = (config.allowedLocalPrefixes as string[]).map((p) => p.trim()).filter(Boolean)
-  const ok =
-    ip === '' ||             // local socket on some platforms
-    ip === '::1' ||
-    ip === '127.0.0.1' ||
-    ip === 'localhost' ||
-    allowed.some((p) => ip.startsWith(p))
+  const proxied = await proxyToMaster(event, '/api/ha/token')
+  if (proxied !== null) return proxied
 
-  if (!ok) {
-    throw createError({
-      statusCode: 403,
-      statusMessage: `Forbidden (non-LAN, ip=${rawIp})`,
-    })
-  }
-
-  if (!config.haToken) {
+  const cfg = await readDeviceConfig()
+  if (!cfg.haToken) {
     return { url: '', token: '', mock: true as const }
   }
 
   return {
-    url: config.haUrl as string,
-    token: config.haToken as string,
+    url: cfg.haUrl,
+    token: cfg.haToken,
   }
 })

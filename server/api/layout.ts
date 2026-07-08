@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { existsSync } from 'node:fs'
+import { proxyToMaster } from '~~/server/utils/masterProxy'
 
 const LAYOUT_PATH = resolve(process.cwd(), 'config/entities.json')
 
@@ -15,6 +16,10 @@ async function readLayout() {
 }
 
 export default defineEventHandler(async (event) => {
+  // Slaves defer to the Master so every screen shares one layout.
+  const proxied = await proxyToMaster(event, '/api/layout')
+  if (proxied !== null) return proxied
+
   if (event.method === 'GET') {
     return await readLayout()
   }

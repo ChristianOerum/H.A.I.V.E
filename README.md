@@ -16,73 +16,78 @@
 - **Custom theme palette editor** — accent hue picker, light/dark/auto mode, scene lighting controls, saveable custom palettes
 - Runs as an SSR Nitro server on the Pi with Chromium kiosk
 
-## Quick start (dev)
+## Try it locally
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open http://localhost:3000.
+Open http://localhost:3000. The **setup screen** appears on first run — see [First-time setup](#first-time-setup).
 
-### Testing without Home Assistant (mock mode)
+Want to explore without a real Home Assistant? Just finish setup as a **Master** without a valid token, or add `?mock=1` to the URL. The app runs a built-in fake HA (16 sample devices) with a yellow `MOCK` badge.
 
-If `.env` doesn't exist or `HA_TOKEN` is empty, the app automatically falls back to **mock mode**: a built-in fake Home Assistant with 16 sample devices (lights, switches, climate, sensors, media player, covers, camera) backed by a small simulator. A yellow `MOCK` badge appears in the top status bar.
+## First-time setup
 
-You can also force mock mode at any time by appending `?mock=1` to the URL.
+On first launch the app shows a **setup screen** — no config files to edit. You choose a **role**:
 
-What you can do in mock mode:
-- Tap any device marker — control panel opens.
-- Toggle lights, switches, blinds; change thermostat target temp; play/pause media.
-- State changes are visible in the 3D scene (lights glow brighter, etc.).
-- Sensor values drift over time so you can see live updates.
+- **Master** — enter your **HA URL** and **token** (HA → Profile → Long-Lived Access Tokens). This device connects to Home Assistant and holds all the data.
+- **Slave** — enter the **Master's URL** (e.g. `http://192.168.1.50:3000`). It just mirrors the Master, so every screen shows the same thing.
 
-### Testing with a real Home Assistant
+Settings are saved on the device. To start over, use **Factory Reset** (Settings → Preferences tab), which returns you to this screen. Your floorplan and device layout are kept.
+
+## Run with Docker (recommended for a permanent install)
 
 ```bash
-cp .env.example .env
-# edit .env: set HA_URL and HA_TOKEN (Profile → Long-Lived Access Tokens in HA)
-npm run dev
+cp .env.template .env      # optional
+docker compose up -d
 ```
 
-The status indicator turns green when connected. Toggling a device should round-trip to your Home Assistant within ~200 ms.
+Then open `http://<device-ip>:3000/` and complete the setup screen. That's it:
 
-### Useful URLs
+- Your config and layout are saved in a Docker volume (survives updates).
+- The app **auto-updates itself** — a bundled Watchtower service pulls new versions automatically. Run `deploy/update.sh` to update immediately.
 
-- `http://localhost:3000/` — main interface
-- `http://localhost:3000/?mock=1` — force mock mode
-- `http://localhost:3000/?kiosk=1` — adds the `kiosk` body class (hides cursor)
-- `http://localhost:3000/api/ha/token` — what the client sees (mocks if no token)
-- `http://localhost:3000/api/layout` — current device placements
+> No published image yet? Open `docker-compose.yml` and uncomment `build: .` under the `haive` service to build it on the device.
 
-## Configuration
+## Auto-start as a kiosk (Raspberry Pi / Debian)
 
-- `.env` — `HA_URL`, `HA_TOKEN`, `ALLOWED_LOCAL_PREFIXES`, `AUTH_PIN` (optional PIN to lock the toolbar), `WIFI_SSID` / `WIFI_PASSWORD` (optional, for the WiFi QR button)
-- `config/entities.json` — device placements (entity_id + 3D position)
-- `config/floorplan.json` — room polygons, wall thicknesses, door/window openings, hidden walls
-- `config/furnitureLibrary/` — furniture item JSON definitions (geometry, scale, materials)
+One command installs Docker + Chromium and makes HAIVE launch full-screen on every boot:
+
+```bash
+sudo ./deploy/install.sh
+```
+
+Reboot and the setup screen shows on the display. Done.
+
+## Advanced options
+
+<details>
+<summary>Run without Docker (bare Node)</summary>
+
+```bash
+npm install
+npm run build
+# Copy .output, .env, config/, deploy/ to /home/pi/CoveHome, then:
+sudo cp deploy/covehome.service deploy/kiosk.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now covehome.service kiosk.service
+```
+</details>
+
+<details>
+<summary>Config files &amp; env vars</summary>
+
+- Setup is stored in `config/device.json` (written by the setup screen).
+- `.env` (optional) can pre-fill defaults: `HA_URL`, `HA_TOKEN`, `ALLOWED_LOCAL_PREFIXES`, `AUTH_PIN`, `WIFI_SSID` / `WIFI_PASSWORD`, and Docker vars `HAIVE_IMAGE` / `HAIVE_PORT` / `WATCHTOWER_INTERVAL`. If `HA_TOKEN` is set here, the setup screen is skipped.
+- `config/entities.json` — device placements. `config/floorplan.json` — rooms/walls/openings. `config/furnitureLibrary/` — furniture definitions.
+- Handy URLs: `?mock=1` (force mock), `?kiosk=1` (hide cursor).
+</details>
 
 ## Adding a new device type
 
 1. Create `components/controls/MyDomainControls.vue` (takes an `entity` prop).
 2. Add an adapter to `adapters/index.ts` and include it in `registerBuiltInAdapters()`.
-
-## Deploying to the Pi
-
-```bash
-# On a build machine (or the Pi)
-npm install
-npm run build
-
-# Copy .output, .env, config/, deploy/ to /home/pi/CoveHome
-sudo cp deploy/covehome.service /etc/systemd/system/
-sudo cp deploy/kiosk.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now covehome.service
-sudo systemctl enable --now kiosk.service
-```
-
-The Pi launches Chromium full-screen against `http://localhost:3000/?kiosk=1`.
 
 ## Architecture
 
@@ -115,6 +120,10 @@ The Pi launches Chromium full-screen against `http://localhost:3000/?kiosk=1`.
   - `ThemeToggle.vue` — light/dark/auto theme toggle.
   - `StatusBar.vue`, `BottomSheet.vue`, `DeviceControlPanel.vue` — core UI chrome.
 - `server/api/ha/token.get.ts` — mints HA token to LAN clients only.
+- `server/api/config.*.ts` — read/write runtime device config (first-launch + factory reset).
+- `server/utils/deviceConfig.ts` — persisted device config (role, HA creds, master URL).
+- `server/utils/lanGuard.ts` — shared LAN-only request guard.
+- `server/utils/masterProxy.ts` — forwards Slave API requests to the Master.
 - `server/api/layout.ts` — read/write `config/entities.json`.
 - `server/api/floorplan.ts` — read/write `config/floorplan.json`.
 - `server/api/wifi.get.ts` — serve WiFi credentials for QR generation.

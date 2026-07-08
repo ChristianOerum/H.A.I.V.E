@@ -8,6 +8,22 @@ const layout = useLayoutStore()
 const entities = useEntitiesStore()
 const theme = useThemeStore()
 
+// ---- Device / factory reset ----
+const device = useDeviceConfig()
+const confirmingReset = ref(false)
+const resetting = ref(false)
+
+async function doFactoryReset() {
+  resetting.value = true
+  try {
+    await device.factoryReset()
+    if (import.meta.client) location.reload()
+  } finally {
+    resetting.value = false
+    confirmingReset.value = false
+  }
+}
+
 const tab = computed({
   get: () => fp.editorTab,
   set: (v) => { fp.editorTab = v },
@@ -1392,6 +1408,52 @@ function onImport() {
                   class="flex-1 btn-touch text-xs border border-dashed border-bg-elevated text-fg-muted hover:text-fg hover:border-fg-muted rounded-lg"
                   @click="theme.addCustomPalette('light')"
                 >+ Light palette</button>
+              </div>
+            </div>
+
+            <!-- ── Device ───────────────────────────────────────── -->
+            <div class="flex flex-col gap-3 pt-3 border-t border-bg-elevated">
+              <span class="text-[10px] text-fg-muted uppercase tracking-wide">Device</span>
+              <div class="flex items-center justify-between text-xs">
+                <span class="text-fg-muted">Role</span>
+                <span class="px-2 py-0.5 rounded-full text-[11px] font-medium capitalize"
+                  :class="device.role.value === 'master' ? 'bg-accent/15 text-accent' : 'bg-bg-elevated text-fg'">
+                  {{ device.role.value }}
+                </span>
+              </div>
+
+              <!-- Factory reset -->
+              <div v-if="!confirmingReset">
+                <button
+                  class="w-full btn-touch text-xs rounded-lg border border-red-500/40 text-red-400 hover:bg-red-500/10"
+                  @click="confirmingReset = true"
+                >
+                  <Icon icon="mdi:restore-alert" width="16" height="16" />
+                  <span>Factory Reset</span>
+                </button>
+                <p class="mt-1.5 text-[10px] text-fg-muted leading-snug">
+                  Clears this device's configuration and returns to the setup screen. Layout and floorplan data are kept.
+                </p>
+              </div>
+              <div v-else class="flex flex-col gap-2 rounded-lg border border-red-500/40 bg-red-500/5 p-2.5">
+                <p class="text-[11px] text-fg leading-snug">
+                  Reset this device to first-launch setup? You'll need to re-enter the configuration.
+                </p>
+                <div class="flex gap-2">
+                  <button
+                    class="flex-1 btn-touch text-xs rounded-lg border border-bg-elevated text-fg-muted hover:text-fg"
+                    :disabled="resetting"
+                    @click="confirmingReset = false"
+                  >Cancel</button>
+                  <button
+                    class="flex-1 btn-touch text-xs rounded-lg bg-red-500 text-white hover:bg-red-600"
+                    :disabled="resetting"
+                    @click="doFactoryReset"
+                  >
+                    <Icon v-if="resetting" icon="mdi:loading" class="animate-spin" width="16" height="16" />
+                    <span>{{ resetting ? 'Resetting…' : 'Confirm Reset' }}</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>

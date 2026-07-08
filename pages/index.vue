@@ -4,7 +4,7 @@ const layout = useLayoutStore()
 const fp = useFloorplanStore()
 const theme = useThemeStore()
 const { start } = useHomeAssistant()
-const { public: { haConfigured } } = useRuntimeConfig()
+const device = useDeviceConfig()
 
 useHead({
   title: 'H.A.I.V.E.',
@@ -12,6 +12,22 @@ useHead({
     { name: 'description', content: 'Home Assistant Interactive Visual Environment' },
   ],
 })
+
+// Load device config during SSR so the first-launch gate is correct on first paint.
+await useAsyncData('device-config', () => device.refresh(), { server: true })
+
+async function boot() {
+  await layout.load()
+  await fp.load()
+  await start().catch(() => {
+    /* error surfaced via store */
+  })
+}
+
+function onSetupDone() {
+  // Reload so the freshly configured server state is picked up cleanly.
+  if (import.meta.client) location.reload()
+}
 
 onMounted(async () => {
   theme.init()
@@ -21,16 +37,13 @@ onMounted(async () => {
   }
   document.addEventListener('contextmenu', (e) => e.preventDefault())
 
-  await layout.load()
-  await fp.load()
-  await start().catch(() => {
-    /* error surfaced via store */
-  })
+  if (device.configured.value) await boot()
 })
 </script>
 
 <template>
-  <div class="relative w-screen h-screen overflow-hidden bg-bg text-fg">
+  <FirstLaunchSetup v-if="!device.configured.value" @done="onSetupDone" />
+  <div v-else class="relative w-screen h-screen overflow-hidden bg-bg text-fg">
     <SceneRoot />
     <StatusBar />
     <ClientOnly><WeatherPanel /></ClientOnly>
@@ -44,13 +57,13 @@ onMounted(async () => {
     <WifiQrButton v-if="!layout.selectedEntityId && !fp.editMode" />
 
     <div
-      v-if="!haConfigured && entities.list.length === 0 && entities.status !== 'connecting'"
+      v-if="!device.config.value.haConfigured && device.role.value === 'master' && entities.list.length === 0 && entities.status !== 'connecting'"
       class="absolute inset-0 flex items-center justify-center pointer-events-none"
     >
       <div class="text-center text-fg-muted max-w-md p-6 bg-bg-panel/80 rounded-2xl pointer-events-auto">
         <h2 class="text-xl mb-2 text-fg">No devices placed</h2>
         <p class="text-sm">
-          Configure <code>HA_URL</code> and <code>HA_TOKEN</code> in <code>.env</code>, then add
+          No Home Assistant connection yet. Run <strong>Factory Reset</strong> in settings to reconfigure, then add
           placements to <code>config/entities.json</code>.
         </p>
       </div>

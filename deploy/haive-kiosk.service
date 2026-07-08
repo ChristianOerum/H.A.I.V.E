@@ -1,0 +1,18 @@
+[Unit]
+Description=HAIVE Chromium kiosk
+After=graphical.target haive-docker.service
+Wants=haive-docker.service
+
+[Service]
+Type=simple
+# Set to the desktop login user (e.g. pi). Overridable via drop-in.
+User=pi
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/pi/.Xauthority
+Environment=HAIVE_URL=http://localhost:3000/?kiosk=1
+ExecStart=/opt/haive/deploy/kiosk-launch.sh
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=graphical.target

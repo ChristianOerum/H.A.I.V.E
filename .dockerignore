@@ -1,0 +1,13 @@
+node_modules
+.nuxt
+.output
+dist
+.git
+.gitignore
+*.log
+.DS_Store
+.env
+.env.*
+!.env.template
+config/device.json
+README.md

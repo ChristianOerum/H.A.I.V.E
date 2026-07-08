@@ -1,0 +1,54 @@
+# HAIVE — Docker Compose
+#
+# Runs the HAIVE server plus Watchtower, which automatically checks the registry
+# for a newer image and updates + restarts the container when one is available.
+#
+#   docker compose up -d
+#
+# Configure the image/env in a sibling `.env` file (see .env.template).
+
+services:
+  haive:
+    # Override with your published image, e.g. ghcr.io/<owner>/haive:latest
+    image: ${HAIVE_IMAGE:-ghcr.io/haive/haive:latest}
+    # For local builds instead of a registry image, uncomment:
+    # build: .
+    container_name: haive
+    restart: unless-stopped
+    ports:
+      - "${HAIVE_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - HOST=0.0.0.0
+      - PORT=3000
+      # Optional env-based bootstrap (the first-launch screen can set these too).
+      - HA_URL=${HA_URL:-}
+      - HA_TOKEN=${HA_TOKEN:-}
+      - ALLOWED_LOCAL_PREFIXES=${ALLOWED_LOCAL_PREFIXES:-127.,192.168.,10.,172.}
+      - AUTH_PIN=${AUTH_PIN:-}
+      - WIFI_SSID=${WIFI_SSID:-}
+      - WIFI_PASSWORD=${WIFI_PASSWORD:-}
+      - WIFI_SECURITY=${WIFI_SECURITY:-WPA}
+      - WIFI_HIDDEN=${WIFI_HIDDEN:-false}
+    volumes:
+      # Persist runtime config (device.json) + edited layout/floorplan.
+      - haive-config:/app/config
+    labels:
+      # Only containers with this label are auto-updated by Watchtower.
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  # Auto-update: polls for a newer HAIVE image and applies it with zero manual steps.
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: haive-watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: >-
+      --label-enable
+      --cleanup
+      --include-restarting
+      --interval ${WATCHTOWER_INTERVAL:-3600}
+
+volumes:
+  haive-config:
