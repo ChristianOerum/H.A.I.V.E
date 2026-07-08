@@ -45,10 +45,17 @@ echo "==> Pulling latest HAIVE image…"
 docker compose -f "${INSTALL_DIR}/docker-compose.yml" pull
 
 echo "==> Recreating containers…"
-docker compose -f "${INSTALL_DIR}/docker-compose.yml" up -d
+docker compose -f "${INSTALL_DIR}/docker-compose.yml" up -d --force-recreate
 
 echo "==> Pruning old images…"
 docker image prune -f >/dev/null
+
+# If the kiosk service is installed, bounce it so Chromium reloads against the
+# freshly restarted container instead of showing a cached page.
+if systemctl list-unit-files | grep -q '^haive-kiosk\.service'; then
+  echo "==> Restarting Chromium kiosk…"
+  systemctl restart haive-kiosk.service || true
+fi
 
 echo ""
 echo "==> Update complete."
