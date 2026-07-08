@@ -50,7 +50,7 @@ sudo usermod -aG docker $USER   # log out + back in after this
 Grab the compose file and start the stack:
 
 ```bash
-git clone https://github.com/christianorum/HAIVE.git
+git clone https://github.com/ChristianOerum/H.A.I.V.E.git
 cd HAIVE
 docker compose up -d
 ```
@@ -75,7 +75,7 @@ That single command pulls the latest repo, syncs the compose file, pulls the lat
 One installer sets up Docker + Chromium + systemd so HAIVE launches full-screen on every boot:
 
 ```bash
-git clone https://github.com/christianorum/HAIVE.git
+git clone https://github.com/ChristianOerum/H.A.I.V.E.git
 cd HAIVE
 sudo bash deploy/install.sh
 sudo reboot
