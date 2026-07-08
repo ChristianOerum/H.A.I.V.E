@@ -58,6 +58,22 @@ function rememberIfOnLight(entity: HassEntity) {
   })
 }
 
+function rgbToHex(rgb: number[]): string {
+  return `#${rgb.map((c) => Math.max(0, Math.min(255, c)).toString(16).padStart(2, '0')).join('')}`
+}
+
+/**
+ * Colour to paint a light's orb. While a light is on we use its live colour;
+ * while it's off HA strips the colour attributes (adapter would fall back to
+ * the default warm yellow), so we reuse the last-known "on" colour from the
+ * cache so the orb keeps its identity instead of reverting to yellow.
+ */
+function lightMarkerColor(entity: HassEntity, liveColor: string): string {
+  if (entity.state === 'on') return liveColor
+  const cached = lastOnLightAttrs.get(entity.entity_id)?.rgb_color as number[] | undefined
+  return cached ? rgbToHex(cached) : liveColor
+}
+
 const markers = computed<MarkerInfo[]>(() => {
   return layout.placements
     .map((p) => {
@@ -68,9 +84,12 @@ const markers = computed<MarkerInfo[]>(() => {
       const visual = adapter
         ? adapter.getDisplayState(entity)
         : { color: '#888', intensity: 0.3, label: '?', active: false }
+      const isLight = p.entity_id.startsWith('light.')
       return {
         entityId: p.entity_id,
-        color: (!p.entity_id.startsWith('light.') && p.color) ? p.color : visual.color,
+        color: isLight
+          ? lightMarkerColor(entity, visual.color)
+          : (p.color || visual.color),
         label: visual.label,
         active: visual.active,
         selected: layout.selectedEntityId === p.entity_id,
