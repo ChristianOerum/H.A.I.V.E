@@ -40,26 +40,76 @@ Settings are saved on the device. To start over, use **Factory Reset** (Settings
 
 ## Run with Docker (recommended for a permanent install)
 
+On the target machine (your PC, a NAS, or a Raspberry Pi), install Docker first if you don't have it:
+
 ```bash
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker $USER   # log out + back in after this
+```
+
+Grab the compose file and start the stack:
+
+```bash
+git clone https://github.com/christianorum/HAIVE.git
+cd HAIVE
 docker compose up -d
 ```
 
 Then open `http://<device-ip>:3000/` and complete the setup screen. That's it:
 
 - Your config and layout are saved in a Docker volume (survives updates).
-- The app **auto-updates itself** — a bundled Watchtower service pulls new versions automatically. Run `deploy/update.sh` to update immediately.
+- The app **auto-updates itself** — a bundled Watchtower service pulls new versions every hour.
 
-> No published image yet? Open `docker-compose.yml` and uncomment `build: .` under the `haive` service to build it on the device.
+To update immediately:
+
+```bash
+sudo bash deploy/update.sh
+```
+
+That single command pulls the latest repo, syncs the compose file, pulls the latest image, and restarts the stack.
+
+> Want to publish your own image? See [Publishing your own image](#publishing-your-own-image) below.
 
 ## Auto-start as a kiosk (Raspberry Pi / Debian)
 
-One command installs Docker + Chromium and makes HAIVE launch full-screen on every boot:
+One installer sets up Docker + Chromium + systemd so HAIVE launches full-screen on every boot:
 
 ```bash
-sudo ./deploy/install.sh
+git clone https://github.com/christianorum/HAIVE.git
+cd HAIVE
+sudo bash deploy/install.sh
+sudo reboot
 ```
 
-Reboot and the setup screen shows on the display. Done.
+> **Note:** run it as `sudo bash deploy/install.sh` (not `./deploy/install.sh`). Cloning on Windows can strip the executable bit or add CRLF line endings; going through `bash` sidesteps both.
+
+After reboot the touchscreen shows the setup screen. Fill in HA URL + token, done.
+
+To update the whole stack later:
+
+```bash
+cd ~/HAIVE && sudo bash deploy/update.sh
+```
+
+## Publishing your own image
+
+Fork or clone the repo, then from your **dev machine**:
+
+```powershell
+docker login                              # once
+$env:DOCKER_USER = "yourdockerhubname"    # once per shell
+npm run image:push                        # multi-arch build + push to Docker Hub
+```
+
+That publishes `yourdockerhubname/haive:<version>` and `:latest` for both PC (`linux/amd64`) and Raspberry Pi (`linux/arm64`).
+
+Then edit `docker-compose.yml` so the `haive` service points at your image:
+
+```yaml
+image: yourdockerhubname/haive:latest
+```
+
+Commit + push. On the target: `sudo bash deploy/update.sh` picks it up.
 
 ## Advanced options
 

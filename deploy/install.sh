@@ -26,8 +26,12 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 if ! docker compose version >/dev/null 2>&1; then
   echo "==> Installing Docker Compose plugin…"
-  apt-get update
-  apt-get install -y docker-compose-plugin
+  # get.docker.com sets up the Docker apt repo — required for docker-compose-plugin.
+  if ! apt-get install -y docker-compose-plugin 2>/dev/null; then
+    echo "    apt didn't know about docker-compose-plugin — refreshing Docker apt repo…"
+    curl -fsSL https://get.docker.com | sh
+    apt-get install -y docker-compose-plugin
+  fi
 fi
 systemctl enable --now docker
 
