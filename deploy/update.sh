@@ -47,6 +47,9 @@ docker compose -f "${INSTALL_DIR}/docker-compose.yml" pull
 echo "==> Recreating containers…"
 docker compose -f "${INSTALL_DIR}/docker-compose.yml" up -d --force-recreate
 
+echo "==> Restarting HAIVE container…"
+docker restart haive >/dev/null
+
 echo "==> Pruning old images…"
 docker image prune -f >/dev/null
 

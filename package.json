@@ -1,6 +1,6 @@
 {
   "name": "haive",
-  "version": "2026.7.4",
+  "version": "2026.7.5",
   "description": "HAIVE — Home Assistant Interactive Visual Environment. A 3D Home Assistant interface for Raspberry Pi touchscreens.",
   "private": true,
   "type": "module",

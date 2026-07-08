@@ -13,16 +13,21 @@ export default defineEventHandler(async (event) => {
   const stream = createEventStream(event)
 
   const unsub = subscribe((e) => {
-    stream.push({ data: JSON.stringify(e) })
+    // Fire-and-forget: h3's push is async but we don't need to await inside
+    // the subscriber (would block other subscribers).
+    stream.push({ data: JSON.stringify(e) }).catch(() => {})
   })
 
+  // Heartbeat every 25s so proxies / kiosk browsers don't idle-drop the socket.
+  const heartbeat = setInterval(() => {
+    stream.push({ event: 'ping', data: '{}' }).catch(() => {})
+  }, 25_000)
+
   stream.onClosed(async () => {
+    clearInterval(heartbeat)
     unsub()
     await stream.close()
   })
-
-  // Nudge — helps some proxies flush headers.
-  await stream.push({ event: 'hello', data: '{}' })
 
   return stream.send()
 })

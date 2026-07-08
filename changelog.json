@@ -1,5 +1,13 @@
 [
   {
+    "version": "2026.7.5",
+    "date": "2026-07-08",
+    "changes": [
+      "Live sync (SSE) actually works now — the previous release queued a warmup message before opening the stream, which blocked the response headers and prevented any events from reaching the browser.",
+      "Added a 25-second heartbeat so kiosk/proxy timeouts can't idle-drop the connection."
+    ]
+  },
+  {
     "version": "2026.7.4",
     "date": "2026-07-08",
     "changes": [
