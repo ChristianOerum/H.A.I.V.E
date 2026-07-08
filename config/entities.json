@@ -115,10 +115,11 @@
     {
       "entity_id": "light.sovevaerelse",
       "position": [
-        1.1,
+        1,
         1.2,
-        0
-      ]
+        -3.2
+      ],
+      "brightnessMultiplier": 0.4
     },
     {
       "entity_id": "media_player.dagligstue",

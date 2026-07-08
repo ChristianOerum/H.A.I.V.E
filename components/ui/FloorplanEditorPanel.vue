@@ -190,6 +190,10 @@ function entityState(entityId: string): string {
   return entities.get(entityId)?.state ?? ''
 }
 
+// Per-light 3D brightness multiplier bounds (used by the editor slider).
+const LIGHT_MULT_MIN = 0.1
+const LIGHT_MULT_MAX = 5
+
 function onAddDevice() {
   if (!newDeviceEntityId.value) return
   layout.addPlacement(newDeviceEntityId.value)
@@ -1120,6 +1124,32 @@ function onImport() {
                   >✕</button>
                 </div>
                 <p class="text-[9px] text-fg-muted leading-snug">Point light emanates from the top of the chosen furniture piece.</p>
+              </label>
+
+              <!-- Brightness multiplier (lights only) — scales the emitted 3D light -->
+              <label v-if="p.entity_id.startsWith('light.')" class="flex flex-col gap-1">
+                <span class="text-[10px] text-fg-muted uppercase tracking-wide">
+                  Brightness multiplier
+                  <span class="text-accent font-mono ml-1">{{ (p.brightnessMultiplier ?? 1).toFixed(1) }}×</span>
+                </span>
+                <div class="flex items-center gap-2">
+                  <input
+                    type="range"
+                    :min="LIGHT_MULT_MIN"
+                    :max="LIGHT_MULT_MAX"
+                    step="0.1"
+                    class="flex-1 min-w-0 accent-accent"
+                    :value="p.brightnessMultiplier ?? 1"
+                    @input="layout.updatePlacement(p.entity_id, { brightnessMultiplier: +($event.target as HTMLInputElement).value })"
+                  />
+                  <button
+                    v-if="(p.brightnessMultiplier ?? 1) !== 1"
+                    class="text-xs text-fg-muted hover:text-fg shrink-0 px-1"
+                    title="Reset to 1×"
+                    @click.stop="layout.updatePlacement(p.entity_id, { brightnessMultiplier: undefined })"
+                  >✕</button>
+                </div>
+                <p class="text-[9px] text-fg-muted leading-snug">Scales how bright this light appears in the 3D scene ({{ LIGHT_MULT_MIN }}×–{{ LIGHT_MULT_MAX }}×).</p>
               </label>
 
               <!-- 3D Position -->

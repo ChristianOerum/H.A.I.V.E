@@ -24,6 +24,16 @@ const visual = computed(() =>
 
 const effectiveLightPos = computed(() => props.lightPosition ?? props.placement.position)
 
+// Perceptual brightness curve for the emitted lamp light. HA brightness maps
+// linearly to `visual.intensity` (0–1), but a linear map looks far too bright
+// at low levels — 20% brightness still floods the room. Raising it to a power
+// > 1 makes low settings fall off steeply while leaving full brightness
+// unchanged (1^n = 1), matching how a dimmed bulb actually looks.
+const LAMP_GAMMA = 2.2
+const lampIntensity = computed(() =>
+  Math.pow(Math.max(0, visual.value.intensity), LAMP_GAMMA) * 80 * (props.placement.brightnessMultiplier ?? 1),
+)
+
 // ── Lamp point light shadow config ───────────────────────────────────────────
 const lightRef = shallowRef<PointLight | null>(null)
 watch(lightRef, (light) => {
@@ -86,7 +96,7 @@ watch([tvSpotRef, effectiveLightPos, () => props.lightFacing], () => {
       v-if="visual.active && entity.entity_id.startsWith('light.')"
       ref="lightRef"
       :color="visual.color"
-      :intensity="visual.intensity * 80"
+      :intensity="lampIntensity"
       :distance="8"
       :decay="2"
       :cast-shadow="true"

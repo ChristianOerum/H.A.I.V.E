@@ -13,6 +13,8 @@ export interface DevicePlacement {
   lightSourceFurnitureId?: string
   /** Optional custom marker color (hex). Does not apply to lights (their color is auto-set). */
   color?: string
+  /** Per-light brightness multiplier for the 3D emitted light (lights only). Defaults to 1. */
+  brightnessMultiplier?: number
 }
 
 export const useLayoutStore = defineStore('layout', {
