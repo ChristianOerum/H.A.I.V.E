@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Icon } from '@iconify/vue'
+import type { HassEntity } from 'home-assistant-js-websocket'
 import { getAdapter } from '~/utils/deviceRegistry'
 
 const layout = useLayoutStore()
@@ -39,11 +40,30 @@ interface MarkerInfo {
 // (SceneProjector.vue) rewrites `positions` every render frame, so keeping
 // position out of this computed avoids running the adapter lookups + array
 // rebuild 60×/sec, which was starving UI input on the Pi.
+// Cache each light's last-known "on" colour/brightness. HA strips these
+// attributes while a light is off, so an optimistic turn-on would otherwise
+// briefly render the adapter's default warm fallback before the real state
+// event arrives. Recorded here (cheap Map write, no reactivity) as we already
+// iterate every entity on each state change.
+const lastOnLightAttrs = new Map<string, Record<string, unknown>>()
+function rememberIfOnLight(entity: HassEntity) {
+  if (!entity.entity_id.startsWith('light.') || entity.state !== 'on') return
+  const a = entity.attributes
+  lastOnLightAttrs.set(entity.entity_id, {
+    rgb_color: a.rgb_color,
+    hs_color: a.hs_color,
+    xy_color: a.xy_color,
+    color_temp: a.color_temp,
+    brightness: a.brightness,
+  })
+}
+
 const markers = computed<MarkerInfo[]>(() => {
   return layout.placements
     .map((p) => {
       const entity = entities.get(p.entity_id)
       if (!entity) return null
+      rememberIfOnLight(entity)
       const adapter = getAdapter(entity)
       const visual = adapter
         ? adapter.getDisplayState(entity)
@@ -79,6 +99,24 @@ function orbStyle(m: MarkerInfo) {
 /** Domains that support the generic `toggle` service call */
 const TOGGLEABLE = new Set(['light', 'switch', 'fan', 'media_player', 'cover', 'input_boolean', 'automation'])
 
+/**
+ * Best-effort optimistic next state for a `toggle`, so the orb flips instantly
+ * instead of waiting for the HA websocket round-trip. The real state event
+ * reconciles a moment later. Returns null for domains we can't guess safely.
+ */
+function optimisticToggleState(entity: HassEntity): string | null {
+  const domain = entity.entity_id.split('.')[0]
+  switch (domain) {
+    case 'cover':
+      return entity.state === 'open' ? 'closed' : 'open'
+    case 'media_player':
+      return entity.state === 'playing' ? 'paused' : 'playing'
+    default:
+      // light / switch / fan / input_boolean / automation are all on/off
+      return entity.state === 'on' ? 'off' : 'on'
+  }
+}
+
 const LONG_PRESS_MS = 300
 const pressTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const longPressTriggered = new Set<string>()
@@ -110,6 +148,20 @@ function onPointerUp(entityId: string, e: PointerEvent) {
   // Short tap — toggle if possible, otherwise open the control panel
   const domain = entityId.split('.')[0]
   if (TOGGLEABLE.has(domain)) {
+    // Optimistically flip local state so the orb reacts immediately; the
+    // authoritative HA state event reconciles this a moment later.
+    const entity = entities.get(entityId)
+    const next = entity ? optimisticToggleState(entity) : null
+    if (next) {
+      const partial: Partial<HassEntity> = { state: next }
+      // Restore the last-known colour when turning a light on so it doesn't
+      // flash the default warm fallback before HA reports the real colour.
+      if (next === 'on' && entityId.startsWith('light.')) {
+        const cached = lastOnLightAttrs.get(entityId)
+        if (cached) partial.attributes = cached
+      }
+      entities.patch(entityId, partial)
+    }
     callService(domain, 'toggle', {}, { entity_id: entityId })
   } else {
     layout.select(entityId)
