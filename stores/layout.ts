@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia'
 
+const MOCK_LAYOUT_KEY = 'haive.mock.layout'
+
 export interface DevicePlacement {
   entity_id: string
   position: [number, number, number]
@@ -26,6 +28,16 @@ export const useLayoutStore = defineStore('layout', {
   },
   actions: {
     async load() {
+      // Mock mode: use the localStorage sandbox if it exists, otherwise seed
+      // from the server config (below) as a starting point.
+      if (isMockMode() && import.meta.client) {
+        const raw = localStorage.getItem(MOCK_LAYOUT_KEY)
+        if (raw) {
+          try { this.placements = JSON.parse(raw).placements ?? [] } catch { this.placements = [] }
+          this.dirty = false
+          return
+        }
+      }
       try {
         const res = await $fetch<{ placements: DevicePlacement[] }>(
           '/api/layout',
@@ -37,6 +49,14 @@ export const useLayoutStore = defineStore('layout', {
       this.dirty = false
     },
     async save() {
+      // Mock mode never writes to the server — it stays a private sandbox.
+      if (isMockMode()) {
+        if (import.meta.client) {
+          localStorage.setItem(MOCK_LAYOUT_KEY, JSON.stringify({ placements: this.placements }))
+        }
+        this.dirty = false
+        return
+      }
       await $fetch('/api/layout', {
         method: 'PUT',
         body: { placements: this.placements },

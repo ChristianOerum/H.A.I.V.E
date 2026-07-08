@@ -13,6 +13,18 @@ const device = useDeviceConfig()
 const confirmingReset = ref(false)
 const resetting = ref(false)
 
+// ---- Device LAN IP (useful when deployed on a headless Pi) ----
+const deviceIp = ref<string | null>(null)
+async function refreshDeviceIp() {
+  try {
+    const res = await $fetch<{ ip: string | null }>('/api/ip')
+    deviceIp.value = res.ip
+  } catch {
+    deviceIp.value = null
+  }
+}
+onMounted(refreshDeviceIp)
+
 async function doFactoryReset() {
   resetting.value = true
   try {
@@ -115,7 +127,10 @@ const deviceSearch = ref('')
 const filteredPlacements = computed(() => {
   const q = deviceSearch.value.toLowerCase().trim()
   return layout.placements.filter((p) => {
-    if (isOrphan(p.entity_id)) return false
+    // Only list placements backed by a live entity. This hides the saved
+    // placements while connecting / disconnected / errored (no entities loaded
+    // yet), instead of showing stale demo devices before HA is actually up.
+    if (entities.status !== 'idle' && !entities.get(p.entity_id)) return false
     if (!q) return true
     const label = entityLabel(p.entity_id).toLowerCase()
     return label.includes(q) || p.entity_id.toLowerCase().includes(q)
@@ -1419,6 +1434,13 @@ function onImport() {
                 <span class="px-2 py-0.5 rounded-full text-[11px] font-medium capitalize"
                   :class="device.role.value === 'master' ? 'bg-accent/15 text-accent' : 'bg-bg-elevated text-fg'">
                   {{ device.role.value }}
+                </span>
+              </div>
+
+              <div class="flex items-center justify-between text-xs">
+                <span class="text-fg-muted">IP Address</span>
+                <span class="px-2 py-0.5 rounded-full text-[11px] font-medium font-mono bg-bg-elevated text-fg">
+                  {{ deviceIp ?? '—' }}
                 </span>
               </div>
 

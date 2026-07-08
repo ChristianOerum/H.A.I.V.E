@@ -16,6 +16,9 @@ useHead({
 // Load device config during SSR so the first-launch gate is correct on first paint.
 await useAsyncData('device-config', () => device.refresh(), { server: true })
 
+// ?mock=1 bypasses the first-launch gate and boots straight into mock mode.
+const mockMode = ref(false)
+
 async function boot() {
   await layout.load()
   await fp.load()
@@ -32,17 +35,17 @@ function onSetupDone() {
 onMounted(async () => {
   theme.init()
 
-  if (new URLSearchParams(location.search).has('kiosk')) {
-    document.body.classList.add('kiosk')
-  }
+  const params = new URLSearchParams(location.search)
+  if (params.has('kiosk')) document.body.classList.add('kiosk')
+  if (params.has('mock')) mockMode.value = true
   document.addEventListener('contextmenu', (e) => e.preventDefault())
 
-  if (device.configured.value) await boot()
+  if (device.configured.value || mockMode.value) await boot()
 })
 </script>
 
 <template>
-  <FirstLaunchSetup v-if="!device.configured.value" @done="onSetupDone" />
+  <FirstLaunchSetup v-if="!device.configured.value && !mockMode" @done="onSetupDone" />
   <div v-else class="relative w-screen h-screen overflow-hidden bg-bg text-fg">
     <SceneRoot />
     <StatusBar />

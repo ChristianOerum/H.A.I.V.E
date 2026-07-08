@@ -43,17 +43,30 @@ export function useHomeAssistant() {
     if (reason) store.setError(reason)
     store.setStatus('connected')
     unsubEntities?.()
-    unsubEntities = mockSubscribe((entities) => store.replace(entities))
+    // Guard on mockActive so a stale simulation can never write to the store
+    // once a real (non-mock) session has taken over.
+    unsubEntities = mockSubscribe((entities) => { if (mockActive) store.replace(entities) })
     startMockSimulation()
   }
 
   async function start() {
-    if (mockActive || connectionPromise) return connectionPromise ?? undefined
-
+    // Mock explicitly requested (?mock=1) — start it once and stop here.
     if (isMockRequested()) {
-      startMock('Mock mode (?mock=1)')
+      if (!mockActive) startMock('Mock mode (?mock=1)')
       return
     }
+
+    // A real connection is already live or in-flight.
+    if (connectionPromise) return connectionPromise
+
+    // Real connection path: proactively tear down any leftover mock simulation
+    // (e.g. from a prior ?mock=1 view in this tab) so its interval can't keep
+    // pushing mock entities into the store while we connect to real HA.
+    stopMockSimulation()
+    unsubEntities?.()
+    unsubEntities = null
+    mockActive = false
+    store.replace({})
 
     store.setStatus('connecting')
 

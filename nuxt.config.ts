@@ -66,7 +66,7 @@ export default defineNuxtConfig({
   function toHex(n){return Math.round(n*255).toString(16).padStart(2,'0')}
   function hslHex(h,s,l){h/=360;s/=100;l/=100;var rv,g,b;if(s===0){rv=g=b=l}else{var q=l<.5?l*(1+s):l+s-l*s,p=2*l-q;rv=h2r(p,q,h+1/3);g=h2r(p,q,h);b=h2r(p,q,h-1/3)}return'#'+toHex(rv)+toHex(g)+toHex(b)}
   var fc=hslHex(fH,fss,fll);
-  var svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z" fill="'+fc+'" stroke="'+fc+'"/><path d="M9 21V12h6v9" fill="white" stroke="white" stroke-width="1.5"/></svg>';
+  var svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="'+fc+'" d="M21.8 13H20v8h-7v-3.33l2.79-2.79l.71.12a2.1 2.1 0 1 0 0-4.2a2.1 2.1 0 0 0-2.1 2.1l.1.71l-1.5 1.52V9.65c.66-.36 1.1-1.05 1.1-1.85A2.1 2.1 0 0 0 12 5.7a2.1 2.1 0 0 0-2.1 2.1c0 .8.44 1.49 1.1 1.85v5.48l-1.5-1.52l.1-.71a2.1 2.1 0 0 0-2.1-2.1a2.1 2.1 0 0 0-2.1 2.1A2.1 2.1 0 0 0 7.5 15l.71-.12L11 17.67V21H4v-8H2.25c-.42 0-.83 0-.83-.21c.01-.22.43-.64.86-1.07L11 3c.33-.33.67-.67 1-.67s.67.34 1 .67l4 4V6h2v3l2.78 2.78c.4.4.81.81.82 1.02c0 .2-.4.2-.8.2M7.5 12a.9.9 0 0 1 .9.9a.9.9 0 0 1-.9.9a.9.9 0 0 1-.9-.9a.9.9 0 0 1 .9-.9m9 0c.5 0 .9.4.9.9s-.4.9-.9.9a.9.9 0 0 1-.9-.9a.9.9 0 0 1 .9-.9M12 6.9c.5 0 .9.4.9.9s-.4.9-.9.9s-.9-.4-.9-.9s.4-.9.9-.9"/></svg>';
   var ico=document.createElement('link');ico.rel='icon';ico.type='image/svg+xml';
   ico.href='data:image/svg+xml,'+encodeURIComponent(svg);
   document.head.appendChild(ico);

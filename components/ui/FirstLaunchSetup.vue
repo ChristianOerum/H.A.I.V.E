@@ -45,7 +45,16 @@ async function submit() {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-[100] flex items-center justify-center bg-bg text-fg p-4 overflow-auto">
+  <div
+    class="fixed inset-0 z-[100] flex items-center justify-center bg-bg text-fg p-4 overflow-auto"
+    :style="{
+      '--bg': '243 238 226',
+      '--bg-panel': '248 245 238',
+      '--bg-elevated': '229 222 207',
+      '--fg': '41 37 36',
+      '--fg-muted': '120 113 108',
+    }"
+  >
     <div class="w-full max-w-lg flex flex-col gap-6 bg-bg-panel rounded-3xl p-6 sm:p-8 shadow-2xl">
       <!-- Header -->
       <div class="flex flex-col items-center gap-2 text-center">

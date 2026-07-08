@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia'
 
+const MOCK_FLOORPLAN_KEY = 'haive.mock.floorplan'
+
 export interface FloorplanRoom {
   id: string
   name: string
@@ -196,6 +198,24 @@ export const useFloorplanStore = defineStore('floorplan', {
       this.dirty = true
     },
     async load() {
+      // Mock mode: use the localStorage sandbox if present, otherwise seed from
+      // the server config (below) as a starting point.
+      if (isMockMode() && import.meta.client) {
+        const raw = localStorage.getItem(MOCK_FLOORPLAN_KEY)
+        if (raw) {
+          try {
+            const data = JSON.parse(raw)
+            this.rooms = data.rooms ?? []
+            this.openings = data.openings ?? []
+            this.furniture = data.furniture ?? []
+            this.furnitureGroups = data.furnitureGroups ?? []
+          } catch {
+            this._loadDefaults()
+          }
+          this.dirty = false
+          return
+        }
+      }
       try {
         const data = await $fetch<{
           rooms: FloorplanRoom[]
@@ -241,6 +261,17 @@ export const useFloorplanStore = defineStore('floorplan', {
     },
 
     async save() {
+      // Mock mode never writes to the server — it stays a private sandbox.
+      if (isMockMode()) {
+        if (import.meta.client) {
+          localStorage.setItem(
+            MOCK_FLOORPLAN_KEY,
+            JSON.stringify({ rooms: this.rooms, openings: this.openings, furniture: this.furniture, furnitureGroups: this.furnitureGroups }),
+          )
+        }
+        this.dirty = false
+        return
+      }
       await $fetch('/api/floorplan', {
         method: 'PUT',
         body: { rooms: this.rooms, openings: this.openings, furniture: this.furniture, furnitureGroups: this.furnitureGroups },
@@ -400,10 +431,8 @@ export const useFloorplanStore = defineStore('floorplan', {
     },
     deleteFurnitureGroup(id: string) {
       this._push()
-      // Ungroup all children
-      for (const f of this.furniture) {
-        if (f.groupId === id) f.groupId = undefined
-      }
+      // Delete all items attached to the group
+      this.furniture = this.furniture.filter((f) => f.groupId !== id)
       this.furnitureGroups = this.furnitureGroups.filter((g) => g.id !== id)
       this.dirty = true
     },
