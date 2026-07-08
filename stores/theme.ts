@@ -10,11 +10,19 @@ const ACCENT_LIT_KEY = 'haive.accentLit'
 const DARK_VAR_KEY   = 'haive.darkVariant'
 const LIGHT_VAR_KEY  = 'haive.lightVariant'
 const CUSTOM_PALETTES_KEY = 'haive.customPalettes'
+const UI_SCALE_KEY   = 'haive.uiScale'
 
 // Default teal hue (≈174°) with default dark-mode S/L
 const DEFAULT_ACCENT_HUE = 174
 const DEFAULT_ACCENT_SAT = 78
 const DEFAULT_ACCENT_LIT = 62
+
+// UI scale — multiplies the root font-size (rem base), scaling all rem-based
+// UI utilities while leaving the viewport-sized 3D scene untouched.
+const DEFAULT_UI_SCALE = 1
+const MIN_UI_SCALE = 0.75
+const MAX_UI_SCALE = 1.5
+const BASE_FONT_SIZE_PX = 16
 
 // ── Colour helpers ────────────────────────────────────────────────────────────
 
@@ -277,6 +285,10 @@ export const useThemeStore = defineStore('theme', {
     lightVariantSaved: 'warm' as string,
     /** User-created custom palettes, persisted to localStorage. */
     customPalettes: [] as CustomPalette[],
+    /** UI scale factor (multiplies the root font-size). */
+    uiScale:      DEFAULT_UI_SCALE,
+    /** Last persisted UI scale — used to detect unsaved changes. */
+    uiScaleSaved: DEFAULT_UI_SCALE,
   }),
   getters: {
     wallOpacity: (state): number => WALL_OPACITY_VALUES[state.wallOpacityMode],
@@ -287,6 +299,7 @@ export const useThemeStore = defineStore('theme', {
     variantDirty: (state): boolean =>
       state.darkVariant !== state.darkVariantSaved ||
       state.lightVariant !== state.lightVariantSaved,
+    uiScaleDirty: (state): boolean => state.uiScale !== state.uiScaleSaved,
   },
   actions: {
     init() {
@@ -337,6 +350,16 @@ export const useThemeStore = defineStore('theme', {
         if (raw) this.customPalettes = JSON.parse(raw) as CustomPalette[]
       } catch { /* ignore corrupt data */ }
 
+      // Restore UI scale
+      const savedScale = localStorage.getItem(UI_SCALE_KEY)
+      if (savedScale !== null) {
+        const scale = parseFloat(savedScale)
+        if (!isNaN(scale)) {
+          this.uiScale = this.uiScaleSaved = this._clampUiScale(scale)
+        }
+      }
+      this._applyUiScale()
+
       // Apply immediately with no transition so the page starts in the right state
       this._applyInstant()
 
@@ -363,6 +386,7 @@ export const useThemeStore = defineStore('theme', {
         darkVariant:    this.darkVariantSaved,
         lightVariant:   this.lightVariantSaved,
         customPalettes: this.customPalettes,
+        uiScale:        this.uiScaleSaved,
       }
       $fetch('/api/preferences', { method: 'PUT', body: payload }).catch(() => {})
     },
@@ -413,6 +437,15 @@ export const useThemeStore = defineStore('theme', {
         this.customPalettes = prefs.customPalettes as CustomPalette[]
         localStorage.setItem(CUSTOM_PALETTES_KEY, JSON.stringify(this.customPalettes))
         changed = true
+      }
+      if (typeof prefs.uiScale === 'number') {
+        const scale = this._clampUiScale(prefs.uiScale as number)
+        if (scale !== this.uiScaleSaved) {
+          this.uiScale = this.uiScaleSaved = scale
+          localStorage.setItem(UI_SCALE_KEY, String(scale))
+          this._applyUiScale()
+          changed = true
+        }
       }
 
       if (!changed) return
@@ -503,6 +536,34 @@ export const useThemeStore = defineStore('theme', {
       }
       this.darkVariantSaved  = this.darkVariant
       this.lightVariantSaved = this.lightVariant
+      this._pushPrefs()
+    },
+
+    // ── UI scale ─────────────────────────────────────────────────────────────
+
+    _clampUiScale(v: number): number {
+      if (isNaN(v)) return DEFAULT_UI_SCALE
+      return Math.max(MIN_UI_SCALE, Math.min(MAX_UI_SCALE, v))
+    },
+
+    /** Apply the current UI scale to the root font-size (rem base). */
+    _applyUiScale() {
+      if (typeof document === 'undefined') return
+      document.documentElement.style.fontSize = `${BASE_FONT_SIZE_PX * this.uiScale}px`
+    },
+
+    /** Preview a UI scale value live (rounded to the nearest 5%). */
+    setUiScale(v: number) {
+      this.uiScale = this._clampUiScale(Math.round(v * 20) / 20)
+      this._applyUiScale()
+    },
+
+    /** Persist the current UI scale to localStorage. */
+    saveUiScale() {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(UI_SCALE_KEY, String(this.uiScale))
+      }
+      this.uiScaleSaved = this.uiScale
       this._pushPrefs()
     },
 

@@ -30,6 +30,20 @@ export default {
       },
       minHeight: { touch: '44px' },
       minWidth: { touch: '44px' },
+      // Fixed px radii so corner rounding stays constant regardless of the
+      // UI scale (which scales the rem base). Values mirror Tailwind defaults
+      // at a 16px root, so appearance is unchanged at 100%.
+      borderRadius: {
+        none: '0px',
+        sm: '2px',
+        DEFAULT: '4px',
+        md: '6px',
+        lg: '8px',
+        xl: '12px',
+        '2xl': '16px',
+        '3xl': '24px',
+        full: '9999px',
+      },
       fontFamily: {
         sans: ['Axiforma', 'Inter', 'system-ui', 'sans-serif'],
       },

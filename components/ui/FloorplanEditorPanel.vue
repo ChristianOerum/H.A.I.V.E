@@ -209,13 +209,14 @@ function onPositionChange(entityId: string, axis: 0 | 1 | 2, e: Event) {
 // ---- Save (floorplan or layout depending on active tab) ----
 const isDirty = computed(() =>
   tab.value === 'preferences'
-    ? theme.accentHue !== theme.accentHueSaved || theme.variantDirty
+    ? theme.accentHue !== theme.accentHueSaved || theme.variantDirty || theme.uiScaleDirty
     : tab.value === 'devices' ? layout.dirty : fp.dirty,
 )
 function onSave() {
   if (tab.value === 'preferences') {
     theme.saveAccentHue()
     theme.savePaletteVariants()
+    theme.saveUiScale()
   }
   else if (tab.value === 'devices') layout.save()
   else fp.save()
@@ -285,6 +286,12 @@ function onAccentPickerInput(e: Event) {
   const hex = (e.target as HTMLInputElement).value
   const [h, s, l] = hexToHsl(hex)
   theme.setAccentColor(h, s, l)
+}
+
+// ---- UI scale ----
+const uiScalePct = computed(() => Math.round(theme.uiScale * 100))
+function onUiScaleInput(e: Event) {
+  theme.setUiScale(+(e.target as HTMLInputElement).value / 100)
 }
 
 // ---- Furniture group export / import ----
@@ -1149,6 +1156,32 @@ function onImport() {
         <!-- PREFERENCES -->
         <template v-if="tab === 'preferences'">
           <div class="flex flex-col gap-4 px-1 py-2">
+            <!-- UI scale -->
+            <div class="flex flex-col gap-2">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] text-fg-muted uppercase tracking-wide">UI scale</span>
+                <span class="text-xs text-fg font-mono">{{ uiScalePct }}%</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="text-[10px] text-fg-muted shrink-0">A</span>
+                <input
+                  type="range"
+                  min="75"
+                  max="150"
+                  step="5"
+                  :value="uiScalePct"
+                  class="flex-1 accent-accent cursor-pointer"
+                  @input="onUiScaleInput"
+                />
+                <span class="text-base text-fg-muted shrink-0">A</span>
+              </div>
+              <button
+                v-if="theme.uiScale !== 1"
+                class="btn-touch text-xs text-fg-muted border border-bg-elevated rounded-lg w-full"
+                @click="theme.setUiScale(1)"
+              >Reset to 100%</button>
+            </div>
+
             <!-- Accent colour -->
             <div class="flex flex-col gap-3">
               <span class="text-[10px] text-fg-muted uppercase tracking-wide">Accent colour</span>
