@@ -10,6 +10,8 @@ import { useRenderLoop } from '@tresjs/core'
 
 const props = defineProps<{
   active: boolean
+  /** World position of the emitter — used to measure wall distances. */
+  origin: [number, number, number]
   /** Marker colour (hex) the ripples and notes are tinted with. */
   color?: string
   /** 0–1 playback volume; scales ripple reach and note density. */
@@ -21,11 +23,65 @@ const NOTE_COUNT = 8
 const RING_PERIOD = 2.4
 const NOTE_LIFE = 3.4
 const FADE_TIME = 1.1
+const RING_SEG = 96
+const MAX_REACH = 12
+
+const fp = useFloorplanStore()
 
 const group = shallowRef<THREE.Group>()
-const rings: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>[] = []
+const rings: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>[] = []
 const notes: THREE.Sprite[] = []
 const noteTextures: THREE.Texture[] = []
+
+// Ripple samples: unit direction per angular step plus the distance to the
+// nearest wall along it, so each sample can be clamped where the sound stops.
+const COS = new Float32Array(RING_SEG)
+const SIN = new Float32Array(RING_SEG)
+for (let i = 0; i < RING_SEG; i++) {
+  const a = (i / RING_SEG) * Math.PI * 2
+  COS[i] = Math.cos(a)
+  SIN[i] = Math.sin(a)
+}
+const wallDist = new Float32Array(RING_SEG).fill(MAX_REACH)
+
+/** Distance along a 2D ray to a segment, or null when it misses. */
+function rayHit(
+  ox: number, oz: number, dx: number, dz: number,
+  x1: number, z1: number, x2: number, z2: number,
+): number | null {
+  const ex = x2 - x1, ez = z2 - z1
+  const denom = dx * ez - dz * ex
+  if (Math.abs(denom) < 1e-9) return null
+  const px = x1 - ox, pz = z1 - oz
+  const t = (px * ez - pz * ex) / denom
+  const u = (px * dz - pz * dx) / denom
+  if (t < 1e-4 || u < 0 || u > 1) return null
+  return t
+}
+
+function measureWalls() {
+  const [ox, , oz] = props.origin ?? [0, 0, 0]
+  const hidden = new Set<string>()
+  for (const room of fp.rooms) {
+    for (const e of room.hiddenWalls ?? []) hidden.add(`${room.id}|${e}`)
+  }
+  const walls = fp.derivedWalls.filter(w => !hidden.has(`${w.roomId}|${w.edgeIdx}`))
+
+  for (let i = 0; i < RING_SEG; i++) {
+    let best = MAX_REACH
+    for (const w of walls) {
+      const t = rayHit(ox, oz, COS[i], SIN[i], w.x1, w.z1, w.x2, w.z2)
+      if (t !== null && t < best) best = t
+    }
+    wallDist[i] = best
+  }
+}
+
+watch(
+  [() => props.origin?.join(','), () => fp.derivedWalls],
+  measureWalls,
+  { immediate: true },
+)
 
 // Per-note state (plain typed arrays — intentionally non-reactive).
 const nT = new Float32Array(NOTE_COUNT)
@@ -123,9 +179,15 @@ function makeNoteTexture(variant: number): THREE.Texture {
 onMounted(() => {
   const g = new THREE.Group()
 
-  const ringGeo = new THREE.RingGeometry(0.9, 1, 64, 1)
-  ringGeo.rotateX(-Math.PI / 2)
   for (let i = 0; i < RING_COUNT; i++) {
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(RING_SEG * 6), 3))
+    const idx: number[] = []
+    for (let s = 0; s < RING_SEG; s++) {
+      const n = ((s + 1) % RING_SEG) * 2
+      idx.push(s * 2, s * 2 + 1, n + 1, s * 2, n + 1, n)
+    }
+    geo.setIndex(idx)
     const mat = new THREE.MeshBasicMaterial({
       transparent: true,
       opacity: 0,
@@ -134,8 +196,9 @@ onMounted(() => {
       blending: THREE.AdditiveBlending,
       toneMapped: false,
     })
-    const mesh = new THREE.Mesh(ringGeo, mat)
+    const mesh = new THREE.Mesh(geo, mat)
     mesh.renderOrder = 2
+    mesh.frustumCulled = false
     rings.push(mesh)
     g.add(mesh)
   }
@@ -190,8 +253,23 @@ onLoop(({ delta, elapsed }: { delta: number; elapsed: number }) => {
   for (let i = 0; i < rings.length; i++) {
     const p = (elapsed / RING_PERIOD + i / RING_COUNT) % 1
     const m = rings[i]
-    const r = 0.12 + p * reach
-    m.scale.set(r, 1, r)
+    const rOuter = 0.12 + p * reach
+    const rInner = rOuter * 0.9
+    // Each sample stops at the wall it would cross; a fully blocked sample
+    // collapses the band to zero width so that arc simply disappears.
+    const attr = m.geometry.attributes.position as THREE.BufferAttribute
+    const arr = attr.array as Float32Array
+    for (let s = 0; s < RING_SEG; s++) {
+      const d = wallDist[s]
+      const ro = rOuter < d ? rOuter : d
+      const ri = rInner < d ? rInner : d
+      const b = s * 6
+      arr[b] = COS[s] * ri
+      arr[b + 2] = SIN[s] * ri
+      arr[b + 3] = COS[s] * ro
+      arr[b + 5] = SIN[s] * ro
+    }
+    attr.needsUpdate = true
     m.position.y = p * 0.3
     m.material.opacity = Math.sin(Math.PI * p) * 0.38 * (0.5 + vol * 0.5) * fade
     m.material.color.setHSL(

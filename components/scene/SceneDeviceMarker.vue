@@ -144,6 +144,7 @@ watch([tvSpotRef, effectiveLightPos, () => props.lightFacing], () => {
     <SceneSpeakerWaves
       v-if="isSpeaker"
       :active="speakerPlaying"
+      :origin="effectiveLightPos"
       :color="placement.color || visual.color"
       :volume="speakerVolume"
     />
