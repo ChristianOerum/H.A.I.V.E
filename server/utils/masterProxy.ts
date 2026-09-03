@@ -15,7 +15,7 @@ export async function proxyToMaster(event: H3Event, path: string): Promise<unkno
 
   const method = event.method
   const url = `${cfg.masterUrl}${path}`
-  const opts: Record<string, unknown> = { method }
+  const opts: Record<string, unknown> = { method, signal: AbortSignal.timeout(3000) }
   if (method !== 'GET' && method !== 'HEAD') {
     opts.body = await readBody(event).catch(() => undefined)
   }
@@ -26,6 +26,12 @@ export async function proxyToMaster(event: H3Event, path: string): Promise<unkno
     const status = (err as { status?: number; statusCode?: number })?.status
       ?? (err as { statusCode?: number })?.statusCode
     if (status === 404) return null
+    // Master unreachable (offline / wrong URL): serve local data instead of
+    // taking the whole screen down.
+    if (status === undefined) {
+      console.warn(`[masterProxy] master unreachable at ${url}, falling back to local data`)
+      return null
+    }
     throw err
   }
 }

@@ -24,6 +24,32 @@ const visual = computed(() =>
 
 const effectiveLightPos = computed(() => props.lightPosition ?? props.placement.position)
 
+// ── Speaker vs. screen ───────────────────────────────────────────────────────
+// A media player emits a directional light beam (screen) or colour ripples plus
+// music notes (speaker). HA reports `device_class` on modern integrations; when
+// it is missing we fall back to the media content type and otherwise assume a
+// speaker, since only screens carry video content.
+const AUDIO_CLASSES = ['speaker', 'receiver']
+const VIDEO_CONTENT = ['tvshow', 'movie', 'video', 'episode', 'channel']
+
+const mediaClass = computed(() => String(props.entity.attributes?.device_class ?? ''))
+const mediaContent = computed(() => String(props.entity.attributes?.media_content_type ?? ''))
+
+const isSpeaker = computed(() =>
+  props.entity.entity_id.startsWith('media_player.') &&
+  (AUDIO_CLASSES.includes(mediaClass.value) ||
+    (mediaClass.value !== 'tv' && !VIDEO_CONTENT.includes(mediaContent.value))),
+)
+const speakerPlaying = computed(() => isSpeaker.value && props.entity.state === 'playing')
+const isScreen = computed(() =>
+  props.entity.entity_id.startsWith('media_player.') && !AUDIO_CLASSES.includes(mediaClass.value),
+)
+const speakerVolume = computed(() => {
+  if (props.entity.attributes?.is_volume_muted === true) return 0
+  const level = props.entity.attributes?.volume_level
+  return typeof level === 'number' ? level : 0.5
+})
+
 // Perceptual brightness curve for the emitted lamp light. HA brightness maps
 // linearly to `visual.intensity` (0–1), but a linear map looks far too bright
 // at low levels — 20% brightness still floods the room. Raising it to a power
@@ -103,7 +129,7 @@ watch([tvSpotRef, effectiveLightPos, () => props.lightFacing], () => {
     />
     <!-- Directional spot light for TV / media player — emits in furniture facing direction -->
     <TresSpotLight
-      v-if="visual.active && entity.entity_id.startsWith('media_player.') && placement.lightSourceFurnitureId"
+      v-if="visual.active && isScreen && placement.lightSourceFurnitureId"
       ref="tvSpotRef"
       color="#ffffff"
       :intensity="visual.intensity * 20"
@@ -114,5 +140,12 @@ watch([tvSpotRef, effectiveLightPos, () => props.lightFacing], () => {
       :cast-shadow="true"
     />
 
+    <!-- Speaker — colour ripples + floating music notes while playing -->
+    <SceneSpeakerWaves
+      v-if="isSpeaker"
+      :active="speakerPlaying"
+      :color="placement.color || visual.color"
+      :volume="speakerVolume"
+    />
   </TresGroup>
 </template>

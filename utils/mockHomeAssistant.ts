@@ -102,10 +102,17 @@ const initial: HassEntities = Object.fromEntries(
 let state: HassEntities = { ...initial }
 const listeners = new Set<Listener>()
 
+// Subscribers must never receive `state` itself: the entities store writes
+// optimistic updates straight into the object it was handed, which would
+// mutate the mock's own state and make the next toggle read the guessed value.
+function snapshot(): HassEntities {
+  return { ...state }
+}
+
 function notify() {
   // Clone so reactivity sees a new ref
   state = { ...state }
-  listeners.forEach((fn) => fn(state))
+  listeners.forEach((fn) => fn(snapshot()))
 }
 
 function update(id: string, patch: Partial<HassEntity> & { attributes?: Record<string, unknown> }) {
@@ -124,7 +131,7 @@ function update(id: string, patch: Partial<HassEntity> & { attributes?: Record<s
 export function mockSubscribe(cb: Listener): () => void {
   listeners.add(cb)
   // Initial push (microtask, so subscribers wired first)
-  queueMicrotask(() => cb(state))
+  queueMicrotask(() => cb(snapshot()))
   return () => listeners.delete(cb)
 }
 

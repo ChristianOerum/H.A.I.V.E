@@ -70,9 +70,14 @@ export function useHomeAssistant() {
 
     store.setStatus('connecting')
 
+    // Missing credentials is a permanent state until setup runs, so we must not
+    // schedule a retry for it.
+    let retryable = true
+
     connectionPromise = (async () => {
       const boot = await fetchBootstrap()
       if (boot.mock || !boot.url || !boot.token) {
+        retryable = false
         throw new Error('HA token not configured')
       }
       const auth = createLongLivedTokenAuth(boot.url, boot.token)
@@ -83,7 +88,7 @@ export function useHomeAssistant() {
       else if (err === ERR_INVALID_AUTH) store.setError('Invalid HA token')
       else store.setError(String((err as Error)?.message ?? err))
       store.setStatus('error')
-      setTimeout(() => void start(), 3000)
+      if (retryable) setTimeout(() => { void start().catch(() => {}) }, 3000)
       throw err
     })
 
