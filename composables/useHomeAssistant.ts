@@ -16,9 +16,10 @@ let unsubEntities: (() => void) | null = null
 let mockActive = false
 
 export interface HaBootstrap {
-  url: string
-  token: string
-  mock?: boolean
+  configured: boolean
+  source: 'supervisor' | 'manual' | 'none'
+  /** Same-origin base the HA client appends `/api/websocket` to. */
+  proxyBase: string
 }
 
 function isMockRequested(): boolean {
@@ -32,7 +33,11 @@ async function fetchBootstrap(): Promise<HaBootstrap> {
 
 /**
  * Composable: provides the live HA connection + reactive entity state.
- * Falls back to a built-in mock when no token is configured or ?mock=1 is set.
+ *
+ * The connection is made to the HAIVE server's own origin, which bridges it to
+ * Home Assistant — so every screen in the house connects the same way and no
+ * client ever holds a Home Assistant token. Falls back to a built-in mock when
+ * HA is not configured or ?mock=1 is set.
  */
 export function useHomeAssistant() {
   const store = useEntitiesStore()
@@ -76,11 +81,13 @@ export function useHomeAssistant() {
 
     connectionPromise = (async () => {
       const boot = await fetchBootstrap()
-      if (boot.mock || !boot.url || !boot.token) {
+      if (!boot.configured) {
         retryable = false
-        throw new Error('HA token not configured')
+        throw new Error('Home Assistant is not connected')
       }
-      const auth = createLongLivedTokenAuth(boot.url, boot.token)
+      // The real token is injected server-side by the proxy, so the placeholder
+      // below is never seen by Home Assistant.
+      const auth = createLongLivedTokenAuth(`${window.location.origin}${boot.proxyBase}`, 'haive-proxy')
       return await createConnection({ auth })
     })().catch((err) => {
       connectionPromise = null

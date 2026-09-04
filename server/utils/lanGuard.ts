@@ -4,8 +4,8 @@ import { readDeviceConfig } from './deviceConfig'
 
 /**
  * Throws a 403 unless the request originates from an allowed LAN client.
- * The allowed prefixes come from the persisted device config (Master), falling
- * back to the env-derived defaults. Loopback is always permitted.
+ * The allowed prefixes come from the persisted server config, falling back to
+ * sensible private-range defaults. Loopback is always permitted.
  */
 export async function assertLanClient(event: H3Event): Promise<void> {
   const cfg = await readDeviceConfig()

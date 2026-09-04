@@ -1,7 +1,6 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { existsSync } from 'node:fs'
-import { proxyToMaster } from '~~/server/utils/masterProxy'
 import { publish } from '~~/server/utils/eventBus'
 
 const FLOORPLAN_PATH = resolve(process.cwd(), 'config/floorplan.json')
@@ -17,10 +16,6 @@ async function read() {
 }
 
 export default defineEventHandler(async (event) => {
-  // Slaves defer to the Master so every screen shares one floorplan.
-  const proxied = await proxyToMaster(event, '/api/floorplan')
-  if (proxied !== null) return proxied
-
   if (event.method === 'GET') {
     const data = await read()
     if (!data) throw createError({ statusCode: 404, statusMessage: 'No floorplan saved yet' })

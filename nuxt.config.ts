@@ -90,11 +90,17 @@ export default defineNuxtConfig({
   runtimeConfig: {
     // All runtime configuration (HA URL/token, WiFi credentials, toolbar PIN,
     // allowed LAN prefixes) is stored in config/device.json and written by the
-    // first-launch setup screen. No environment variables are used or needed.
+    // setup screen, or provided by the Home Assistant Supervisor when running
+    // as an add-on. No environment variables are used or needed.
   },
 
   nitro: {
     preset: 'node-server',
+    // Required by /api/ha/proxy/api/websocket, which bridges browsers to the
+    // Home Assistant WebSocket API without ever exposing the token.
+    experimental: {
+      websocket: true,
+    },
   },
 
   typescript: {

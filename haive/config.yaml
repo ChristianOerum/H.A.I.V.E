@@ -1,0 +1,25 @@
+name: HAIVE
+slug: haive
+version: "2026.7.1"
+description: 3D Home Assistant interface for touchscreens, phones and wall panels.
+url: https://github.com/ChristianOerum/H.A.I.V.E.
+# Prebuilt multi-arch image (deploy/publish-image.sh|ps1) — Supervisor pulls it
+# directly instead of building on-device, so updates are just a version bump.
+# `version` above must exactly match the image tag.
+image: christianorum/haive
+arch:
+  - aarch64
+  - amd64
+init: false
+startup: application
+boot: auto
+# Grants SUPERVISOR_TOKEN + access to http://supervisor/core, which is how HAIVE
+# reaches Home Assistant. Nothing for the user to configure.
+homeassistant_api: true
+ports:
+  3000/tcp: 3000
+ports_description:
+  3000/tcp: HAIVE dashboard — open this address on any screen in the house
+panel_icon: mdi:home-automation
+options: {}
+schema: {}

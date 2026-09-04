@@ -1,55 +1,32 @@
 import { assertLanClient } from '~~/server/utils/lanGuard'
-import { readDeviceConfig, type WifiSecurity } from '~~/server/utils/deviceConfig'
-
-interface MasterPublicConfig {
-  haUrl: string
-  haConfigured: boolean
-  authEnabled: boolean
-  wifi: { configured: boolean; ssid: string; security: WifiSecurity; hidden: boolean }
-}
+import { readDeviceConfig } from '~~/server/utils/deviceConfig'
+import { resolveHaTarget } from '~~/server/utils/haTarget'
 
 /**
- * Returns the current (non-secret) device configuration for the setup screen and
+ * Returns the current (non-secret) server configuration for the setup screen and
  * settings panel. Secrets (HA token, WiFi password, PIN) are never returned —
  * only whether they are present.
  *
- * On a Slave, the HA URL / PIN-enabled flag / WiFi info are mirrored from the
- * Master so all screens present the same lock, WiFi button and camera URLs.
+ * There is exactly one HAIVE server, so every screen that asks gets the same
+ * answer and therefore the same lock, WiFi button and camera behaviour.
  */
 export default defineEventHandler(async (event) => {
   await assertLanClient(event)
   const cfg = await readDeviceConfig()
-
-  let haUrl = cfg.haUrl
-  let haConfigured = !!cfg.haToken
-  let authEnabled = !!cfg.authPin
-  let wifi = {
-    configured: !!cfg.wifi.ssid,
-    ssid: cfg.wifi.ssid,
-    security: cfg.wifi.security,
-    hidden: cfg.wifi.hidden,
-  }
-
-  if (cfg.role === 'slave' && cfg.masterUrl) {
-    try {
-      const master = await $fetch<MasterPublicConfig>(`${cfg.masterUrl}/api/config`)
-      haUrl = master.haUrl
-      haConfigured = master.haConfigured
-      authEnabled = master.authEnabled
-      wifi = master.wifi
-    } catch {
-      // Master unreachable — fall back to whatever we have locally.
-    }
-  }
+  const ha = await resolveHaTarget()
 
   return {
     configured: cfg.configured,
-    role: cfg.role,
-    haUrl,
+    haUrl: ha.source === 'supervisor' ? '' : cfg.haUrl,
+    haSource: ha.source,
+    haConfigured: ha.source !== 'none',
     allowedLocalPrefixes: cfg.allowedLocalPrefixes,
-    masterUrl: cfg.masterUrl,
-    haConfigured,
-    authEnabled,
-    wifi,
+    authEnabled: !!cfg.authPin,
+    wifi: {
+      configured: !!cfg.wifi.ssid,
+      ssid: cfg.wifi.ssid,
+      security: cfg.wifi.security,
+      hidden: cfg.wifi.hidden,
+    },
   }
 })

@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Launches Chromium full-screen in kiosk mode against the local HAIVE server.
+# Launches Chromium full-screen in kiosk mode against the HAIVE add-on.
+# Set HAIVE_URL to the Home Assistant machine running it, e.g.
+# http://homeassistant.local:3000/?kiosk=1
 # Works on Debian/Raspberry Pi OS (chromium) and Ubuntu (chromium-browser).
 set -euo pipefail
 
-URL="${HAIVE_URL:-http://localhost:3000/?kiosk=1}"
+URL="${HAIVE_URL:-http://homeassistant.local:3000/?kiosk=1}"
 
 # Pick whichever Chromium binary is installed.
 CHROME_BIN="$(command -v chromium || command -v chromium-browser || true)"
@@ -23,8 +25,9 @@ if command -v unclutter >/dev/null 2>&1; then
 fi
 
 # Wait until the server responds before opening the browser (avoids error page).
+# The server may be on another machine, so poll the configured URL itself.
 for _ in $(seq 1 60); do
-  if curl -fsS "http://localhost:3000/" >/dev/null 2>&1; then
+  if curl -fsS -o /dev/null "$URL"; then
     break
   fi
   sleep 2

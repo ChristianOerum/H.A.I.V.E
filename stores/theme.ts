@@ -367,7 +367,7 @@ export const useThemeStore = defineStore('theme', {
         this._startCycle()
       }
 
-      // Fetch shared prefs from the master (async — overrides localStorage
+      // Fetch shared prefs from the server (async — overrides localStorage
       // once resolved). Silently ignored if offline / server unreachable.
       this.pullPrefs().catch(() => {})
     },

@@ -3,19 +3,16 @@ import { dirname, resolve } from 'node:path'
 import { existsSync } from 'node:fs'
 
 /**
- * Runtime, persisted device configuration.
+ * Runtime, persisted server configuration.
  *
- * This is the single source of truth for whether the device has been
- * configured, its role, Home Assistant credentials, WiFi QR info, and toolbar
- * PIN. Everything is written at runtime by the first-launch setup screen and
- * stored in `config/device.json` — there are no environment variables to set.
+ * HAIVE runs as a single server — ideally the Home Assistant OS add-on, so it
+ * lives on the same box as Home Assistant itself. Every screen in the house is
+ * just a browser pointed at that server, so they all read and write the same
+ * files and stay in sync over SSE. There are no roles and no per-screen setup.
  *
- * A Master hosts the server, holds the HA token and owns the layout/floorplan
- * data. A Slave holds no HA credentials of its own — it points at a Master and
- * its API requests are proxied there, so every screen shows the same data.
+ * Everything here is written at runtime by the setup screen and stored in
+ * `config/device.json` — there are no environment variables to set.
  */
-
-export type DeviceRole = 'master' | 'slave'
 
 export type WifiSecurity = 'WPA' | 'WEP' | 'NONE'
 
@@ -27,17 +24,14 @@ export interface WifiConfig {
 }
 
 export interface DeviceConfig {
-  /** True once the first-launch setup has been completed. */
+  /** True once the setup screen has been completed. */
   configured: boolean
-  role: DeviceRole
-  /** Master-only: Home Assistant base URL. */
+  /** Home Assistant base URL. Ignored when running as a Supervisor add-on. */
   haUrl: string
-  /** Master-only: Home Assistant long-lived access token. */
+  /** Home Assistant long-lived token. Ignored when running as an add-on. */
   haToken: string
-  /** Master-only: IP prefixes allowed to hit the API. */
+  /** IP prefixes allowed to hit the API. */
   allowedLocalPrefixes: string[]
-  /** Slave-only: base URL of the Master server (e.g. http://192.168.1.50:3000). */
-  masterUrl: string
   /** Optional PIN protecting the toolbar controls. Empty = auth disabled. */
   authPin: string
   /** Optional WiFi credentials shown via QR. Empty ssid = QR hidden. */
@@ -51,11 +45,9 @@ const DEFAULT_PREFIXES = ['127.', '192.168.', '10.', '172.']
 function defaultConfig(): DeviceConfig {
   return {
     configured: false,
-    role: 'master',
     haUrl: 'http://homeassistant.local:8123',
     haToken: '',
     allowedLocalPrefixes: [...DEFAULT_PREFIXES],
-    masterUrl: '',
     authPin: '',
     wifi: { ssid: '', password: '', security: 'WPA', hidden: false },
   }
@@ -74,18 +66,15 @@ function normalizeWifi(raw: Partial<WifiConfig> | undefined): WifiConfig {
 
 function normalize(raw: Partial<DeviceConfig>): DeviceConfig {
   const base = defaultConfig()
-  const role: DeviceRole = raw.role === 'slave' ? 'slave' : 'master'
   const prefixes =
     Array.isArray(raw.allowedLocalPrefixes) && raw.allowedLocalPrefixes.length
       ? raw.allowedLocalPrefixes.map((p) => String(p).trim()).filter(Boolean)
       : base.allowedLocalPrefixes
   return {
     configured: raw.configured ?? base.configured,
-    role,
-    haUrl: (raw.haUrl ?? base.haUrl) || '',
+    haUrl: ((raw.haUrl ?? base.haUrl) || '').replace(/\/+$/, ''),
     haToken: (raw.haToken ?? '') || '',
     allowedLocalPrefixes: prefixes,
-    masterUrl: (raw.masterUrl ?? '').replace(/\/+$/, ''),
     authPin: String(raw.authPin ?? '').trim(),
     wifi: normalizeWifi(raw.wifi),
   }

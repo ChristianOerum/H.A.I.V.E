@@ -1,26 +1,20 @@
 import { assertLanClient } from '~~/server/utils/lanGuard'
-import { readDeviceConfig } from '~~/server/utils/deviceConfig'
-import { proxyToMaster } from '~~/server/utils/masterProxy'
+import { resolveHaTarget } from '~~/server/utils/haTarget'
 
 /**
- * Returns the HA URL + long-lived token to LAN clients only.
- *
- * - Master: serves its own persisted (or env-provided) HA credentials.
- * - Slave: proxies to the Master so every screen uses the same connection.
+ * Tells a browser how to reach Home Assistant. No credentials are returned —
+ * clients talk to HA through the same-origin `/api/ha/proxy` bridge, so the
+ * token stays on the server and every screen on the network behaves the same.
  */
 export default defineEventHandler(async (event) => {
   await assertLanClient(event)
 
-  const proxied = await proxyToMaster(event, '/api/ha/token')
-  if (proxied !== null) return proxied
-
-  const cfg = await readDeviceConfig()
-  if (!cfg.haToken) {
-    return { url: '', token: '', mock: true as const }
-  }
+  const target = await resolveHaTarget()
 
   return {
-    url: cfg.haUrl,
-    token: cfg.haToken,
+    configured: target.source !== 'none',
+    source: target.source,
+    /** Same-origin base URL; the HA client appends `/api/websocket` to it. */
+    proxyBase: '/api/ha/proxy',
   }
 })

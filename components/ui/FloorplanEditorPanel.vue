@@ -8,12 +8,12 @@ const layout = useLayoutStore()
 const entities = useEntitiesStore()
 const theme = useThemeStore()
 
-// ---- Device / factory reset ----
+// ---- Server / factory reset ----
 const device = useDeviceConfig()
 const confirmingReset = ref(false)
 const resetting = ref(false)
 
-// ---- Device LAN IP (useful when deployed on a headless Pi) ----
+// ---- Server LAN IP (useful when deployed headless, e.g. as an HA add-on) ----
 const deviceIp = ref<string | null>(null)
 async function refreshDeviceIp() {
   try {
@@ -24,6 +24,25 @@ async function refreshDeviceIp() {
   }
 }
 onMounted(refreshDeviceIp)
+
+/** Address to hand to other screens. Falls back to the LAN IP on a local kiosk. */
+const origin = ref('')
+onMounted(() => { origin.value = window.location.origin })
+const shareUrl = computed(() => {
+  if (!origin.value) return ''
+  const { protocol, hostname, port } = new URL(origin.value)
+  const isLoopback = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]'
+  if (isLoopback && deviceIp.value) return `${protocol}//${deviceIp.value}${port ? `:${port}` : ''}`
+  return origin.value
+})
+
+const haSourceLabel = computed(() => {
+  switch (device.config.value.haSource) {
+    case 'supervisor': return 'Add-on'
+    case 'manual': return 'Direct'
+    default: return 'Not connected'
+  }
+})
 
 async function doFactoryReset() {
   resetting.value = true
@@ -1489,21 +1508,21 @@ function onImport() {
               </div>
             </div>
 
-            <!-- ── Device ───────────────────────────────────────── -->
+            <!-- ── Server ───────────────────────────────────────── -->
             <div class="flex flex-col gap-3 pt-3 border-t border-bg-elevated">
-              <span class="text-[10px] text-fg-muted uppercase tracking-wide">Device</span>
+              <span class="text-[10px] text-fg-muted uppercase tracking-wide">Server</span>
               <div class="flex items-center justify-between text-xs">
-                <span class="text-fg-muted">Role</span>
-                <span class="px-2 py-0.5 rounded-full text-[11px] font-medium capitalize"
-                  :class="device.role.value === 'master' ? 'bg-accent/15 text-accent' : 'bg-bg-elevated text-fg'">
-                  {{ device.role.value }}
+                <span class="text-fg-muted">Home Assistant</span>
+                <span class="px-2 py-0.5 rounded-full text-[11px] font-medium"
+                  :class="device.config.value.haConfigured ? 'bg-accent/15 text-accent' : 'bg-bg-elevated text-fg'">
+                  {{ haSourceLabel }}
                 </span>
               </div>
 
-              <div class="flex items-center justify-between text-xs">
-                <span class="text-fg-muted">IP Address</span>
-                <span class="px-2 py-0.5 rounded-full text-[11px] font-medium font-mono bg-bg-elevated text-fg">
-                  {{ deviceIp ?? '—' }}
+              <div class="flex flex-col gap-1">
+                <span class="text-fg-muted text-xs">Open on other screens</span>
+                <span class="px-2 py-1 rounded-lg text-[11px] font-medium font-mono bg-bg-elevated text-fg break-all">
+                  {{ shareUrl || '—' }}
                 </span>
               </div>
 
@@ -1517,7 +1536,7 @@ function onImport() {
                   <span>Factory Reset</span>
                 </button>
                 <p class="mt-1.5 text-[10px] text-fg-muted leading-snug">
-                  Clears this device's configuration and returns to the setup screen. Layout and floorplan data are kept.
+                  Clears the server configuration and returns every screen to the setup screen. Layout and floorplan data are kept.
                 </p>
               </div>
               <div v-else class="flex flex-col gap-2 rounded-lg border border-red-500/40 bg-red-500/5 p-2.5">

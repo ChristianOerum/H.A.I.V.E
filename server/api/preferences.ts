@@ -2,13 +2,12 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { existsSync } from 'node:fs'
 import { assertLanClient } from '~~/server/utils/lanGuard'
-import { proxyToMaster } from '~~/server/utils/masterProxy'
 import { publish } from '~~/server/utils/eventBus'
 
 /**
  * Cross-device preferences (theme, accent colour, dark/light variants, custom
- * palettes). Stored server-side so every screen — master + slaves — stays in
- * visual sync. Slaves proxy the request to the master.
+ * palettes). Stored server-side so every screen in the house stays in visual
+ * sync.
  */
 
 const PREFS_PATH = resolve(process.cwd(), 'config/preferences.json')
@@ -24,9 +23,6 @@ async function readPrefs(): Promise<Record<string, unknown>> {
 
 export default defineEventHandler(async (event) => {
   await assertLanClient(event)
-
-  const proxied = await proxyToMaster(event, '/api/preferences')
-  if (proxied !== null) return proxied
 
   if (event.method === 'GET') {
     return await readPrefs()

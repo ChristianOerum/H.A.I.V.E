@@ -1,7 +1,7 @@
 [Unit]
 Description=HAIVE Chromium kiosk
-After=graphical.target haive-docker.service
-Wants=haive-docker.service
+After=graphical.target network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
@@ -9,7 +9,8 @@ Type=simple
 User=pi
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/home/pi/.Xauthority
-Environment=HAIVE_URL=http://localhost:3000/?kiosk=1
+# Address of the HAIVE add-on running on your Home Assistant machine.
+Environment=HAIVE_URL=http://homeassistant.local:3000/?kiosk=1
 ExecStart=/opt/haive/deploy/kiosk-launch.sh
 Restart=always
 RestartSec=3

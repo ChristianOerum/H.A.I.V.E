@@ -4,15 +4,13 @@ import type { WifiSecurity } from '~/composables/useDeviceConfig'
 
 const emit = defineEmits<{ done: [] }>()
 
-const { config, save } = useDeviceConfig()
+const { config, supervised, save } = useDeviceConfig()
 
-const role = ref<'master' | 'slave'>(config.value.role ?? 'master')
 const haUrl = ref(config.value.haUrl || 'http://homeassistant.local:8123')
 const haToken = ref('')
 const allowedLocalPrefixes = ref(
   (config.value.allowedLocalPrefixes ?? ['127.', '192.168.', '10.', '172.']).join(','),
 )
-const masterUrl = ref(config.value.masterUrl || '')
 
 // PIN (optional) — empty means the toolbar lock is disabled.
 const authPin = ref('')
@@ -34,9 +32,14 @@ const pinValid = computed(() => {
 const canSubmit = computed(() => {
   if (saving.value) return false
   if (!pinValid.value) return false
-  if (role.value === 'master') return !!haUrl.value.trim() && !!haToken.value.trim()
-  return /^https?:\/\/.+/i.test(masterUrl.value.trim())
+  if (supervised.value) return true
+  return !!haUrl.value.trim() && !!haToken.value.trim()
 })
+
+// The address other screens should open to join this dashboard. Resolved after
+// mount because it comes from the browser's own location.
+const shareUrl = ref('')
+onMounted(() => { shareUrl.value = window.location.origin })
 
 async function submit() {
   if (!canSubmit.value) return
@@ -44,11 +47,9 @@ async function submit() {
   error.value = ''
   try {
     await save({
-      role: role.value,
       haUrl: haUrl.value.trim(),
       haToken: haToken.value.trim(),
       allowedLocalPrefixes: allowedLocalPrefixes.value.trim(),
-      masterUrl: masterUrl.value.trim(),
       authPin: authPin.value.trim(),
       wifi: {
         ssid: wifiSsid.value.trim(),
@@ -85,38 +86,11 @@ async function submit() {
           <Icon icon="mdi:home-assistant" width="30" height="30" class="text-accent" />
           <span class="text-lg font-semibold tracking-[0.2em] text-accent">H.A.I.V.E.</span>
         </div>
-        <h1 class="text-xl sm:text-2xl font-semibold">Welcome — let's set up this screen</h1>
+        <h1 class="text-xl sm:text-2xl font-semibold">Welcome — let's set up your home</h1>
         <p class="text-sm text-fg-muted max-w-xl">
-          This runs once. Choose whether this device hosts the data (Master) or mirrors another (Slave).
+          This runs once, on the server. Every other screen in the house just opens the same address and is instantly in
+          sync — nothing to configure per device.
         </p>
-      </div>
-
-      <!-- Role selector -->
-      <div class="grid grid-cols-2 gap-3">
-        <button
-          type="button"
-          class="flex items-start gap-3 rounded-2xl border p-4 text-left transition-colors min-h-touch"
-          :class="role === 'master' ? 'border-accent bg-accent/10' : 'border-bg-elevated hover:border-fg-muted'"
-          @click="role = 'master'"
-        >
-          <Icon icon="mdi:server-network" width="26" height="26" :class="role === 'master' ? 'text-accent' : 'text-fg-muted'" />
-          <div class="flex flex-col gap-0.5">
-            <span class="text-base font-semibold">Master</span>
-            <span class="text-xs text-fg-muted leading-snug">Hosts the server and connects to Home Assistant.</span>
-          </div>
-        </button>
-        <button
-          type="button"
-          class="flex items-start gap-3 rounded-2xl border p-4 text-left transition-colors min-h-touch"
-          :class="role === 'slave' ? 'border-accent bg-accent/10' : 'border-bg-elevated hover:border-fg-muted'"
-          @click="role = 'slave'"
-        >
-          <Icon icon="mdi:monitor-multiple" width="26" height="26" :class="role === 'slave' ? 'text-accent' : 'text-fg-muted'" />
-          <div class="flex flex-col gap-0.5">
-            <span class="text-base font-semibold">Slave</span>
-            <span class="text-xs text-fg-muted leading-snug">Mirrors a Master so screens stay in sync.</span>
-          </div>
-        </button>
       </div>
 
       <!-- Two-column form area on landscape (>=md); stacks on portrait/small -->
@@ -124,10 +98,21 @@ async function submit() {
 
         <!-- LEFT column: connection -->
         <section class="flex flex-col gap-4">
-          <h2 class="text-xs text-fg-muted uppercase tracking-wider font-semibold">Connection</h2>
+          <h2 class="text-xs text-fg-muted uppercase tracking-wider font-semibold">Home Assistant</h2>
 
-          <!-- Master fields -->
-          <template v-if="role === 'master'">
+          <!-- Add-on install: the Supervisor already provides the connection. -->
+          <div v-if="supervised" class="rounded-2xl border border-accent/40 bg-accent/10 p-4 flex gap-3">
+            <Icon icon="mdi:check-decagram" width="22" height="22" class="shrink-0 text-accent mt-0.5" />
+            <div class="flex flex-col gap-1">
+              <span class="text-sm font-semibold">Connected automatically</span>
+              <p class="text-xs text-fg-muted leading-snug">
+                HAIVE is running as a Home Assistant add-on, so it talks to Home Assistant directly. No URL or token
+                needed.
+              </p>
+            </div>
+          </div>
+
+          <template v-else>
             <label class="flex flex-col gap-1.5">
               <span class="text-[11px] text-fg-muted uppercase tracking-wide">Home Assistant URL</span>
               <input
@@ -146,44 +131,35 @@ async function submit() {
                 placeholder="Paste your HA long-lived access token"
                 class="w-full resize-none rounded-xl border border-bg-elevated bg-bg px-4 py-3 text-sm font-mono text-fg focus:outline-none focus:border-accent/60"
               />
-              <span class="text-[11px] text-fg-muted">Home Assistant → Profile → Long-Lived Access Tokens.</span>
-            </label>
-            <label class="flex flex-col gap-1.5">
-              <span class="text-[11px] text-fg-muted uppercase tracking-wide">Allowed Local Prefixes</span>
-              <input
-                v-model="allowedLocalPrefixes"
-                type="text"
-                placeholder="127.,192.168.,10.,172."
-                class="w-full rounded-xl border border-bg-elevated bg-bg px-4 py-3 text-base text-fg focus:outline-none focus:border-accent/60"
-              />
-              <span class="text-[11px] text-fg-muted">Comma-separated IP prefixes permitted to reach the API.</span>
+              <span class="text-[11px] text-fg-muted">
+                Home Assistant → Profile → Long-Lived Access Tokens. The token stays on this server — it is never handed
+                to the screens.
+              </span>
             </label>
           </template>
 
-          <!-- Slave fields -->
-          <template v-else>
-            <label class="flex flex-col gap-1.5">
-              <span class="text-[11px] text-fg-muted uppercase tracking-wide">Master URL</span>
-              <input
-                v-model="masterUrl"
-                type="url"
-                inputmode="url"
-                placeholder="http://192.168.1.50:3000"
-                class="w-full rounded-xl border border-bg-elevated bg-bg px-4 py-3 text-base text-fg focus:outline-none focus:border-accent/60"
-              />
-              <span class="text-[11px] text-fg-muted">Address of the Master HAIVE server on your network.</span>
-            </label>
-            <div class="rounded-xl bg-bg-elevated/70 border border-bg-elevated p-4 flex gap-3">
-              <Icon icon="mdi:information-outline" width="22" height="22" class="shrink-0 text-fg-muted mt-0.5" />
-              <p class="text-xs text-fg-muted leading-snug">
-                Slaves inherit the toolbar PIN and WiFi QR credentials from the Master, so you only configure them once — on the Master.
-              </p>
-            </div>
-          </template>
+          <label class="flex flex-col gap-1.5">
+            <span class="text-[11px] text-fg-muted uppercase tracking-wide">Allowed Local Prefixes</span>
+            <input
+              v-model="allowedLocalPrefixes"
+              type="text"
+              placeholder="127.,192.168.,10.,172."
+              class="w-full rounded-xl border border-bg-elevated bg-bg px-4 py-3 text-base text-fg focus:outline-none focus:border-accent/60"
+            />
+            <span class="text-[11px] text-fg-muted">Comma-separated IP prefixes permitted to reach this dashboard.</span>
+          </label>
+
+          <div v-if="shareUrl" class="rounded-xl bg-bg-elevated/70 border border-bg-elevated p-4 flex gap-3">
+            <Icon icon="mdi:monitor-multiple" width="22" height="22" class="shrink-0 text-fg-muted mt-0.5" />
+            <p class="text-xs text-fg-muted leading-snug">
+              Open <span class="font-mono text-fg">{{ shareUrl }}</span> on any tablet, phone or wall panel on your
+              network to add another screen. They all share this layout, theme and settings.
+            </p>
+          </div>
         </section>
 
-        <!-- RIGHT column: options (Master only) -->
-        <section v-if="role === 'master'" class="flex flex-col gap-5">
+        <!-- RIGHT column: options -->
+        <section class="flex flex-col gap-5">
           <h2 class="text-xs text-fg-muted uppercase tracking-wider font-semibold">Options</h2>
 
           <!-- Toolbar PIN -->
@@ -203,7 +179,7 @@ async function submit() {
                 :class="pinValid ? 'border-bg-elevated' : 'border-red-400/70'"
               />
               <span v-if="!pinValid" class="text-[11px] text-red-500">PIN must be at least 4 digits.</span>
-              <span v-else class="text-[11px] text-fg-muted">Locks the editor toolbar behind a numeric PIN.</span>
+              <span v-else class="text-[11px] text-fg-muted">Locks the editor toolbar on every screen behind a numeric PIN.</span>
             </label>
           </div>
 

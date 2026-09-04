@@ -1,10 +1,6 @@
 import { assertLanClient } from '~~/server/utils/lanGuard'
-import {
-  readDeviceConfig,
-  writeDeviceConfig,
-  type DeviceRole,
-  type WifiSecurity,
-} from '~~/server/utils/deviceConfig'
+import { readDeviceConfig, writeDeviceConfig, type WifiSecurity } from '~~/server/utils/deviceConfig'
+import { isSupervised } from '~~/server/utils/haTarget'
 import { publish } from '~~/server/utils/eventBus'
 
 interface SetupWifi {
@@ -15,11 +11,9 @@ interface SetupWifi {
 }
 
 interface SetupBody {
-  role?: DeviceRole
   haUrl?: string
   haToken?: string
   allowedLocalPrefixes?: string | string[]
-  masterUrl?: string
   authPin?: string
   wifi?: SetupWifi
 }
@@ -30,15 +24,17 @@ function normalizeSecurity(v: string | undefined): WifiSecurity {
 }
 
 /**
- * Persists the first-launch configuration. Master requires an HA URL + token;
- * Slave requires a Master URL and stores no HA credentials of its own.
- * PIN + WiFi are optional shared fields available to both roles.
+ * Persists the server configuration written by the setup screen.
+ *
+ * An HA URL + long-lived token are only required when HAIVE runs outside Home
+ * Assistant OS; as an add-on the Supervisor provides the connection and those
+ * fields are ignored. PIN and WiFi are always optional.
  */
 export default defineEventHandler(async (event) => {
   await assertLanClient(event)
   const body = await readBody<SetupBody>(event)
+  const supervised = isSupervised()
 
-  const role: DeviceRole = body?.role === 'slave' ? 'slave' : 'master'
   const prefixes = Array.isArray(body?.allowedLocalPrefixes)
     ? body!.allowedLocalPrefixes
     : String(body?.allowedLocalPrefixes ?? '')
@@ -55,44 +51,30 @@ export default defineEventHandler(async (event) => {
     hidden: !!body?.wifi?.hidden,
   }
 
-  if (role === 'master') {
-    const haUrl = (body?.haUrl ?? '').trim()
-    const haToken = (body?.haToken ?? '').trim()
-    if (!haUrl) throw createError({ statusCode: 400, statusMessage: 'HA URL is required for a Master device' })
-    if (!haToken) throw createError({ statusCode: 400, statusMessage: 'HA token is required for a Master device' })
-
-    const cfg = await writeDeviceConfig({
-      role,
-      haUrl,
-      haToken,
-      allowedLocalPrefixes: prefixes.length ? prefixes : undefined,
-      masterUrl: '',
-      authPin,
-      wifi,
-    })
-    publish({ type: 'device' })
-    return { ok: true, role: cfg.role }
-  }
-
-  // Slave
-  const masterUrl = (body?.masterUrl ?? '').trim()
-  if (!masterUrl) throw createError({ statusCode: 400, statusMessage: 'Master URL is required for a Slave device' })
-  if (!/^https?:\/\//i.test(masterUrl)) {
-    throw createError({ statusCode: 400, statusMessage: 'Master URL must start with http:// or https://' })
-  }
-
-  // Slaves inherit PIN + WiFi from the Master — never store their own.
-  // Keep the current allowed prefixes so the slave can still serve its own client.
   const current = await readDeviceConfig()
-  const cfg = await writeDeviceConfig({
-    role,
-    haUrl: '',
-    haToken: '',
+  const haUrl = (body?.haUrl ?? '').trim()
+  // A blank token on a re-save means "keep the one already stored".
+  const haToken = (body?.haToken ?? '').trim() || current.haToken
+
+  if (!supervised) {
+    if (!haUrl) {
+      throw createError({ statusCode: 400, statusMessage: 'Home Assistant URL is required' })
+    }
+    if (!/^https?:\/\//i.test(haUrl)) {
+      throw createError({ statusCode: 400, statusMessage: 'Home Assistant URL must start with http:// or https://' })
+    }
+    if (!haToken) {
+      throw createError({ statusCode: 400, statusMessage: 'Home Assistant token is required' })
+    }
+  }
+
+  await writeDeviceConfig({
+    haUrl: supervised ? '' : haUrl,
+    haToken: supervised ? '' : haToken,
     allowedLocalPrefixes: prefixes.length ? prefixes : current.allowedLocalPrefixes,
-    masterUrl,
-    authPin: '',
-    wifi: { ssid: '', password: '', security: 'WPA', hidden: false },
+    authPin,
+    wifi,
   })
   publish({ type: 'device' })
-  return { ok: true, role: cfg.role }
+  return { ok: true }
 })

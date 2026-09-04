@@ -4,8 +4,12 @@
   "description": "HAIVE — Home Assistant Interactive Visual Environment. A 3D Home Assistant interface for Raspberry Pi touchscreens.",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "nuxt dev",
+    "dev:host": "nuxt dev --host",
     "build": "nuxt build",
     "preview": "nuxt preview",
     "start": "node .output/server/index.mjs",

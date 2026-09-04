@@ -10,3 +10,6 @@ dist
 .env.*
 config/device.json
 README.md
+haive
+repository.yaml
+deploy

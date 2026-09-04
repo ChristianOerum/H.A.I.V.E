@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Build (and optionally push) the HAIVE Docker image as a multi-arch manifest.
 #
+# This image IS the Home Assistant add-on (haive/config.yaml references it via
+# `image:`), so publishing it and bumping `version` there is the entire release
+# process — Supervisor pulls the new tag directly, no on-device build.
+#
 # Reads the version from package.json and produces two tags: :<version> and :latest.
 # Uses `docker buildx` so one build serves PC (linux/amd64) and Raspberry Pi
 # (linux/arm64) targets from a single manifest.
@@ -58,6 +62,7 @@ fi
 if [ "$PUSH" -eq 1 ]; then
   docker buildx build \
     --platform "${PLATFORMS}" \
+    --build-arg "BUILD_VERSION=${VERSION}" \
     -t "${TAG_VERSION}" \
     -t "${TAG_LATEST}" \
     --push \
@@ -71,6 +76,7 @@ else
   echo "==> Local build: overriding platforms to ${HOST_ARCH} (--load only supports one)."
   docker buildx build \
     --platform "${HOST_ARCH}" \
+    --build-arg "BUILD_VERSION=${VERSION}" \
     -t "${TAG_VERSION}" \
     -t "${TAG_LATEST}" \
     --load \

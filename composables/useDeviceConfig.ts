@@ -1,6 +1,7 @@
-export type DeviceRole = 'master' | 'slave'
-
 export type WifiSecurity = 'WPA' | 'WEP' | 'NONE'
+
+/** Where the server gets its Home Assistant connection from. */
+export type HaSource = 'supervisor' | 'manual' | 'none'
 
 export interface PublicWifiInfo {
   configured: boolean
@@ -11,21 +12,18 @@ export interface PublicWifiInfo {
 
 export interface PublicDeviceConfig {
   configured: boolean
-  role: DeviceRole
   haUrl: string
+  haSource: HaSource
   allowedLocalPrefixes: string[]
-  masterUrl: string
   haConfigured: boolean
   authEnabled: boolean
   wifi: PublicWifiInfo
 }
 
 export interface DeviceSetupPayload {
-  role: DeviceRole
   haUrl?: string
   haToken?: string
   allowedLocalPrefixes?: string
-  masterUrl?: string
   authPin?: string
   wifi?: {
     ssid: string
@@ -37,18 +35,18 @@ export interface DeviceSetupPayload {
 
 const DEFAULT: PublicDeviceConfig = {
   configured: false,
-  role: 'master',
   haUrl: '',
+  haSource: 'none',
   allowedLocalPrefixes: ['127.', '192.168.', '10.', '172.'],
-  masterUrl: '',
   haConfigured: false,
   authEnabled: false,
   wifi: { configured: false, ssid: '', security: 'WPA', hidden: false },
 }
 
 /**
- * Client-side view of the persisted device configuration. Drives the
- * first-launch setup gate and the settings/factory-reset controls.
+ * Client-side view of the persisted server configuration. Every screen talks to
+ * the same HAIVE server, so this is identical everywhere. Drives the setup gate
+ * and the settings / factory-reset controls.
  */
 export function useDeviceConfig() {
   const config = useState<PublicDeviceConfig>('device:config', () => ({ ...DEFAULT }))
@@ -72,8 +70,9 @@ export function useDeviceConfig() {
   }
 
   const configured = computed(() => config.value.configured)
-  const role = computed(() => config.value.role)
   const authEnabled = computed(() => config.value.authEnabled)
+  /** True when HAIVE is running as a Home Assistant OS add-on. */
+  const supervised = computed(() => config.value.haSource === 'supervisor')
 
-  return { config, loaded, configured, role, authEnabled, refresh, save, factoryReset }
+  return { config, loaded, configured, authEnabled, supervised, refresh, save, factoryReset }
 }

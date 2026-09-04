@@ -62,7 +62,7 @@ onMounted(async () => {
     <VersionWatermark />
 
     <div
-      v-if="!device.config.value.haConfigured && device.role.value === 'master' && entities.list.length === 0 && entities.status !== 'connecting'"
+      v-if="!device.config.value.haConfigured && entities.list.length === 0 && entities.status !== 'connecting'"
       class="absolute inset-0 flex items-center justify-center pointer-events-none"
     >
       <div class="text-center text-fg-muted max-w-md p-6 bg-bg-panel/80 rounded-2xl pointer-events-auto">

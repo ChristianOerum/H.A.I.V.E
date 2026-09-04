@@ -1,5 +1,4 @@
 import { readDeviceConfig } from '~~/server/utils/deviceConfig'
-import { proxyToMaster } from '~~/server/utils/masterProxy'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<{ pin: string }>(event)
@@ -7,10 +6,6 @@ export default defineEventHandler(async (event) => {
   if (!body?.pin || typeof body.pin !== 'string') {
     throw createError({ statusCode: 400, message: 'PIN required' })
   }
-
-  // Slaves have no PIN of their own — verify against the Master.
-  const proxied = await proxyToMaster(event, '/api/auth/verify')
-  if (proxied !== null) return proxied
 
   const { authPin: configuredPin } = await readDeviceConfig()
   if (!configuredPin) {
