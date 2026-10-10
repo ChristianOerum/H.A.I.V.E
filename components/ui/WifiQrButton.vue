@@ -80,7 +80,7 @@ watch([creds, canvasRef], () => {
     <!-- Floating bottom-left button -->
     <button
       v-if="!open"
-      class="absolute bottom-4 left-4 btn-touch px-2 py-1 shadow-lg pointer-events-auto z-20"
+      class="absolute bottom-4 left-4 surface w-12 h-12 rounded-2xl flex items-center justify-center text-fg-muted active:bg-bg-elevated pointer-events-auto z-20"
       aria-label="Show WiFi QR code"
       title="WiFi"
       @click="openSheet"
@@ -112,7 +112,10 @@ watch([creds, canvasRef], () => {
     <div class="z-20">
       <BottomSheet :open="open" @close="close">
         <div class="flex flex-col items-center text-center gap-4">
-          <h2 class="text-lg font-semibold">WiFi</h2>
+          <div>
+            <h2 class="text-lg font-semibold">Join the WiFi</h2>
+            <p class="text-sm text-fg-muted">Point your phone camera at the code</p>
+          </div>
 
           <div v-if="loading" class="text-fg-muted text-sm py-8">Loading…</div>
           <div v-else-if="error" class="text-red-400 text-sm py-8">{{ error }}</div>
@@ -132,7 +135,7 @@ watch([creds, canvasRef], () => {
                 <template v-else>••••••••</template>
                 <button
                   v-if="creds.security.toUpperCase() !== 'NONE'"
-                  class="ml-2 text-xs text-accent underline"
+                  class="ml-2 px-2 py-1 -my-1 rounded-md text-xs text-accent active:bg-bg-elevated"
                   @click="showPassword = !showPassword"
                 >{{ showPassword ? 'Hide' : 'Show' }}</button>
               </span>
@@ -140,7 +143,7 @@ watch([creds, canvasRef], () => {
               <span class="text-left font-mono">{{ creds.security }}</span>
             </div>
 
-            <p class="text-xs text-fg-muted">Scan with your phone camera to join.</p>
+            
           </template>
         </div>
       </BottomSheet>

@@ -12,6 +12,7 @@ export function useLiveSync() {
   const fp = useFloorplanStore()
   const device = useDeviceConfig()
   const theme = useThemeStore()
+  const scan = usePendingScan()
 
   let es: EventSource | null = null
   let retryTimer: ReturnType<typeof setTimeout> | null = null
@@ -41,6 +42,8 @@ export function useLiveSync() {
         if (prev !== device.configured.value) location.reload()
       } else if (data.type === 'preferences') {
         await theme.pullPrefs().catch(() => {})
+      } else if (data.type === 'scan') {
+        await scan.refresh()
       }
     }
 

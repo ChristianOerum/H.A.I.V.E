@@ -59,32 +59,32 @@ const dayLabel = (iso: string) => {
 </script>
 
 <template>
-  <div class="absolute top-14 left-0 right-0 flex justify-start px-6 pointer-events-none z-10">
+  <div class="absolute top-[4.5rem] left-0 flex justify-start px-4 sm:px-6 pointer-events-none z-10">
     <div
-      class="pointer-events-auto flex flex-col gap-3 rounded-2xl"
+      class="pointer-events-auto flex flex-col gap-3"
     >
       <!-- Current: time, date, temperature & condition -->
       <div class="flex items-center gap-5">
         <div class="text-left">
-          <div class="text-3xl font-light leading-none">{{ time }}</div>
-          <div class="text-xs text-fg-muted mt-1">{{ dateLong }}</div>
+          <div class="text-3xl font-semibold leading-none tabular-nums text-fg">{{ time }}</div>
+          <div class="text-xs font-medium text-fg/80 mt-1">{{ dateLong }}</div>
         </div>
 
-        <div class="w-px self-stretch bg-fg/10" />
+        <div class="w-px self-stretch bg-fg/25" />
 
         <div class="flex items-center gap-3">
           <Icon :icon="iconFor(weather.condition.value)" width="40" height="40" class="text-accent" />
           <div>
-            <div class="text-2xl font-light leading-none">
-              {{ roundTemp(weather.temperature.value) }}<span class="text-sm text-fg-muted">{{ weather.temperatureUnit.value }}</span>
+            <div class="text-2xl font-semibold leading-none text-fg">
+              {{ roundTemp(weather.temperature.value) }}<span class="text-sm text-fg/75">{{ weather.temperatureUnit.value }}</span>
             </div>
-            <div class="text-xs text-fg-muted">{{ conditionLabel }}</div>
+            <div class="text-xs font-medium text-accent">{{ conditionLabel }}</div>
           </div>
         </div>
 
-        <div class="w-px self-stretch bg-fg/10 hidden sm:block" />
+        <div class="w-px self-stretch bg-fg/25 hidden sm:block" />
 
-        <div class="hidden sm:flex flex-col gap-1 text-xs text-fg-muted">
+        <div class="hidden sm:flex flex-col gap-1 text-xs font-medium text-fg/80">
           <div v-if="weather.humidity.value != null" class="flex items-center gap-1">
             <Icon icon="mdi:water-percent" width="14" height="14" />
             <span>{{ weather.humidity.value }}%</span>
@@ -97,19 +97,20 @@ const dayLabel = (iso: string) => {
       </div>
 
       <!-- Forecast: other days -->
-      <div v-if="days.length" class="flex items-start justify-between gap-3 pt-1 border-t border-fg/10">
+      <div v-if="days.length" class="flex items-start justify-between gap-3 pt-1 border-t border-fg/25">
         <div
           v-for="(d, i) in days"
           :key="i"
           class="flex flex-col items-center gap-1 min-w-[3rem]"
         >
-          <span class="text-[11px] text-fg-muted">{{ dayLabel(d.datetime) }}</span>
-          <Icon :icon="iconFor(d.condition)" width="22" height="22" class="text-fg/80" />
-          <span class="text-xs">
-            {{ roundTemp(d.tempHigh) }}<span v-if="d.tempLow != null" class="text-fg-muted"> / {{ roundTemp(d.tempLow) }}</span>
+          <span class="text-[11px] font-medium text-fg/80">{{ dayLabel(d.datetime) }}</span>
+          <Icon :icon="iconFor(d.condition)" width="22" height="22" class="text-accent" />
+          <span class="text-xs font-semibold text-fg">
+            {{ roundTemp(d.tempHigh) }}<span v-if="d.tempLow != null" class="font-normal text-fg/70"> / {{ roundTemp(d.tempLow) }}</span>
           </span>
         </div>
       </div>
     </div>
   </div>
 </template>
+

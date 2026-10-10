@@ -2,26 +2,16 @@
 import { TresCanvas } from '@tresjs/core'
 import { OrbitControls } from '@tresjs/cientos'
 import * as THREE from 'three'
-import type { DirectionalLight } from 'three'
+import { PCFShadowMap, type DirectionalLight } from 'three'
+import { requestShadowUpdate } from '~/composables/useShadowUpdates'
 
 const layout = useLayoutStore()
 const entities = useEntitiesStore()
 const sceneColors = useSceneColors()
 const fp = useFloorplanStore()
 const {
-  sunFactor, ambientFactor, sunColor, ambientColor, skyColor, skyTintAmount,
+  sunFactor, ambientFactor, sunColor, ambientColor, skyColor, skyTintAmount, cloudShade,
 } = useWeather()
-
-/** Blend two "#rrggbb" colors by t (0 = a, 1 = b). */
-function blendHex(a: string, b: string, t: number): string {
-  const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16)
-  const ar = (pa >> 16) & 255, ag = (pa >> 8) & 255, ab = pa & 255
-  const br = (pb >> 16) & 255, bg = (pb >> 8) & 255, bb = pb & 255
-  const r = Math.round(ar + (br - ar) * t)
-  const g = Math.round(ag + (bg - ag) * t)
-  const bl = Math.round(ab + (bb - ab) * t)
-  return `#${((1 << 24) | (r << 16) | (g << 8) | bl).toString(16).slice(1)}`
-}
 
 /** Background color: theme clear tinted toward the current weather's sky. */
 const clearColor = computed(() =>
@@ -47,21 +37,30 @@ const shadowHalfExtent = computed(() => {
   return Math.ceil(Math.max(hw, hd))
 })
 
+const quality = useGraphicsQuality()
+
 const sunLight = ref<DirectionalLight | null>(null)
 watchEffect(() => {
   const light = sunLight.value
   if (!light) return
   const h = shadowHalfExtent.value
+  const size = quality.settings.value.sunShadowSize
   // Low normalBias avoids "peter-panning": a high value detaches the shadow from
   // wall bases, leaving a thin lit line where walls meet the floor. A tiny
   // negative depth bias keeps surfaces free of shadow acne.
   light.shadow.bias = -0.0002
   light.shadow.normalBias = 0.012
-  light.shadow.mapSize.set(2048, 2048)
+  if (light.shadow.mapSize.x !== size) {
+    light.shadow.mapSize.set(size, size)
+    // A resize only takes effect once the old render target is released.
+    light.shadow.map?.dispose()
+    light.shadow.map = null
+  }
   const cam = light.shadow.camera as THREE.OrthographicCamera
   cam.left = -h; cam.right = h; cam.top = h; cam.bottom = -h
   cam.near = 0.1; cam.far = 60
   cam.updateProjectionMatrix()
+  requestShadowUpdate()
 })
 const { savedView, isLocked, isReturning } = useCameraView()
 const cameraPosition = computed<[number, number, number]>(() =>
@@ -72,6 +71,18 @@ const placedEntities = computed(() =>
   layout.placements
     .map((p) => ({ placement: p, entity: entities.get(p.entity_id) }))
     .filter((x): x is { placement: typeof x.placement; entity: NonNullable<typeof x.entity> } => !!x.entity),
+)
+
+/** Every placed light entity with its emission point — fed to the pooled lamp lights. */
+const lampSources = computed(() =>
+  placedEntities.value
+    .filter(({ placement }) => placement.entity_id.startsWith('light.'))
+    .map(({ placement, entity }) => ({
+      placement,
+      entity,
+      position: (placement.lightSourceFurnitureId ? furnitureWorldTop(placement.lightSourceFurnitureId) : undefined)
+        ?? placement.position,
+    })),
 )
 
 /** Ray-casting point-in-polygon test (XZ plane). */
@@ -128,12 +139,19 @@ function furnitureLightFacing(furnitureId: string): number {
 </script>
 
 <template>
+  <!-- on-demand: frames are drawn only when something changes (camera moves,
+       props update, or an animating effect asks via invalidate()). An idle
+       wall panel then costs next to nothing. PCFShadowMap is set explicitly —
+       Tres defaults to PCFSoftShadowMap, which three r182 deprecates. -->
   <TresCanvas
     :clear-color="clearColor"
     window-size
     shadows
-    :dpr="[1, 2]"
+    :shadow-map-type="PCFShadowMap"
+    render-mode="on-demand"
+    :dpr="quality.settings.value.dpr"
   >
+    <SceneRenderControl />
     <TresPerspectiveCamera :position="cameraPosition" :look-at="center" :fov="45" />
 
     <OrbitControls
@@ -154,12 +172,14 @@ function furnitureLightFacing(furnitureId: string): number {
     <TresDirectionalLight
       ref="sunLight"
       :position="[8, 14, 8]"
-      :intensity="sceneColors.sun * sunFactor"
+      :intensity="sceneColors.sun * sunFactor * cloudShade"
       :color="sunColor"
-      :cast-shadow="true"
+      :cast-shadow="quality.settings.value.shadows"
     />
 
     <SceneFloorplan />
+
+    <SceneLampLights :lamps="lampSources" />
 
     <SceneProjector />
 

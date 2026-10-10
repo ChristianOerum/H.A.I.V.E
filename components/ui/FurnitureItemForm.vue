@@ -103,397 +103,239 @@ const autoSegments = computed(() => {
 </script>
 
 <template>
-  <div class="mt-3 grid grid-cols-2 gap-2" @click.stop>
-    <!-- Label -->
-    <label class="col-span-2 flex flex-col gap-1">
-      <span class="text-[10px] text-fg-muted uppercase tracking-wide">Label</span>
-      <input
-        class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-full"
-        :value="item.label"
-        @change="fp.updateFurniture(item.id, { label: ($event.target as HTMLInputElement).value })"
-      />
-    </label>
-
-    <!-- Group assignment -->
-    <label class="col-span-2 flex flex-col gap-1">
-      <span class="text-[10px] text-fg-muted uppercase tracking-wide">Group</span>
-      <select
-        class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-full"
-        :value="item.groupId ?? ''"
-        @change="fp.setFurnitureGroup(item.id, ($event.target as HTMLSelectElement).value || undefined)"
-      >
-        <option value="">— No group —</option>
-        <option v-for="g in fp.furnitureGroups" :key="g.id" :value="g.id">{{ g.label }}</option>
-      </select>
-    </label>
-
-    <!-- Position -->
-    <label class="flex flex-col gap-1">
-      <span class="text-[10px] text-fg-muted uppercase tracking-wide">X</span>
-      <input type="number" step="0.25" class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-full"
-        :value="item.x" @change="fp.updateFurniture(item.id, { x: numVal($event) })" />
-    </label>
-    <label class="flex flex-col gap-1">
-      <span class="text-[10px] text-fg-muted uppercase tracking-wide">Z</span>
-      <input type="number" step="0.25" class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-full"
-        :value="item.z" @change="fp.updateFurniture(item.id, { z: numVal($event) })" />
-    </label>
-
-    <!-- Dimensions -->
-    <label class="flex flex-col gap-1">
-      <span class="text-[10px] text-fg-muted uppercase tracking-wide">Width</span>
-      <input type="number" step="0.25" min="0.1" class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-full"
-        :value="item.w" @change="fp.updateFurniture(item.id, { w: numVal($event) })" />
-    </label>
-    <label class="flex flex-col gap-1">
-      <span class="text-[10px] text-fg-muted uppercase tracking-wide">Height</span>
-      <input type="number" step="0.1" min="0.1" class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-full"
-        :value="item.h" @change="fp.updateFurniture(item.id, { h: numVal($event) })" />
-    </label>
-    <label class="flex flex-col gap-1">
-      <span class="text-[10px] text-fg-muted uppercase tracking-wide">Depth</span>
-      <input type="number" step="0.25" min="0.1" class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-full"
-        :value="item.d" @change="fp.updateFurniture(item.id, { d: numVal($event) })" />
-    </label>
-    <label class="flex flex-col gap-1">
-      <span class="text-[10px] text-fg-muted uppercase tracking-wide">Y (lift)</span>
-      <input type="number" step="0.05" min="0" class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-full"
-        :value="item.y" @change="fp.updateFurniture(item.id, { y: numVal($event) })" />
-    </label>
-    <div class="col-span-2 grid grid-cols-3 gap-2">
-      <label class="flex flex-col gap-1">
-        <span class="text-[10px] text-fg-muted uppercase tracking-wide">Rot X °</span>
-        <input type="number" step="5" class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-full"
-          :value="item.rotX ?? 0" @change="fp.updateFurniture(item.id, { rotX: numVal($event) })" />
-      </label>
-      <label class="flex flex-col gap-1">
-        <span class="text-[10px] text-fg-muted uppercase tracking-wide">Rot Y °</span>
-        <input type="number" step="5" class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-full"
-          :value="item.rotY ?? 0" @change="fp.updateFurniture(item.id, { rotY: numVal($event) })" />
-      </label>
-      <label class="flex flex-col gap-1">
-        <span class="text-[10px] text-fg-muted uppercase tracking-wide">Rot Z °</span>
-        <input type="number" step="5" class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-full"
-          :value="item.rotZ ?? 0" @change="fp.updateFurniture(item.id, { rotZ: numVal($event) })" />
-      </label>
-    </div>
-    <div class="col-span-2 flex gap-1">
-      <button
-        class="flex-1 py-1.5 rounded-lg border text-xs transition-colors"
-        :class="effectiveShape === 'box' ? 'bg-accent/20 border-accent text-accent' : 'bg-bg border-bg-elevated text-fg-muted hover:border-accent/50'"
-        @click.stop="setBox()"
-      >Box</button>
-      <button
-        class="flex-1 py-1.5 rounded-lg border text-xs transition-colors"
-        :class="effectiveShape === 'rounded' ? 'bg-accent/20 border-accent text-accent' : 'bg-bg border-bg-elevated text-fg-muted hover:border-accent/50'"
-        @click.stop="setRounded()"
-      >Rounded</button>
-      <button
-        class="flex-1 py-1.5 rounded-lg border text-xs transition-colors"
-        :class="effectiveShape === 'ellipse' ? 'bg-accent/20 border-accent text-accent' : 'bg-bg border-bg-elevated text-fg-muted hover:border-accent/50'"
-        @click.stop="setEllipse()"
-      >Ellipse</button>
-      <button
-        class="flex-1 py-1.5 rounded-lg border text-xs transition-colors"
-        :class="effectiveShape === 'sphere' ? 'bg-accent/20 border-accent text-accent' : 'bg-bg border-bg-elevated text-fg-muted hover:border-accent/50'"
-        @click.stop="setSphere()"
-      >Sphere</button>
+  <div class="flex flex-col gap-4" @click.stop>
+    <div class="grid grid-cols-2 gap-3">
+      <SettingsField label="Name">
+        <input
+          class="field-input"
+          :value="item.label"
+          @change="fp.updateFurniture(item.id, { label: ($event.target as HTMLInputElement).value })"
+        />
+      </SettingsField>
+      <SettingsField label="Group">
+        <select
+          class="field-input"
+          :value="item.groupId ?? ''"
+          @change="fp.setFurnitureGroup(item.id, ($event.target as HTMLSelectElement).value || undefined)"
+        >
+          <option value="">No group</option>
+          <option v-for="g in fp.furnitureGroups" :key="g.id" :value="g.id">{{ g.label }}</option>
+        </select>
+      </SettingsField>
     </div>
 
-    <!-- ── Sphere controls ──────────────────────────────────────────────────── -->
-    <template v-if="effectiveShape === 'sphere'">
+    <SettingsSection title="Position">
+      <div class="grid grid-cols-3 gap-2">
+        <SettingsField label="X">
+          <SettingsNumber label="X" :value="item.x" :step="0.25" @change="(v) => fp.updateFurniture(item.id, { x: v })" />
+        </SettingsField>
+        <SettingsField label="Z">
+          <SettingsNumber label="Z" :value="item.z" :step="0.25" @change="(v) => fp.updateFurniture(item.id, { z: v })" />
+        </SettingsField>
+        <SettingsField label="Lift">
+          <SettingsNumber label="Lift" :value="item.y" :step="0.05" :min="0" @change="(v) => fp.updateFurniture(item.id, { y: v })" />
+        </SettingsField>
+      </div>
+    </SettingsSection>
 
-      <!-- Full / Half toggle -->
-      <div class="col-span-2 flex flex-col gap-1">
-        <span class="text-[10px] text-fg-muted uppercase tracking-wide">Mode</span>
-        <div class="flex gap-1">
-          <button
-            class="flex-1 py-1 rounded-lg border text-[10px] transition-colors"
-            :class="(item.sphereMode ?? 'full') === 'full' ? 'bg-accent/20 border-accent text-accent' : 'bg-bg border-bg-elevated text-fg-muted hover:border-accent/50'"
-            @click.stop="fp.updateFurniture(item.id, { sphereMode: 'full' })"
-          >Full sphere</button>
-          <button
-            class="flex-1 py-1 rounded-lg border text-[10px] transition-colors"
-            :class="(item.sphereMode ?? 'full') === 'half' ? 'bg-accent/20 border-accent text-accent' : 'bg-bg border-bg-elevated text-fg-muted hover:border-accent/50'"
-            @click.stop="fp.updateFurniture(item.id, { sphereMode: 'half' })"
-          >Half sphere</button>
-        </div>
+    <SettingsSection title="Size">
+      <div class="grid grid-cols-3 gap-2">
+        <SettingsField label="Width">
+          <SettingsNumber label="Width" :value="item.w" :step="0.25" :min="0.1" @change="(v) => fp.updateFurniture(item.id, { w: v })" />
+        </SettingsField>
+        <SettingsField label="Height">
+          <SettingsNumber label="Height" :value="item.h" :step="0.1" :min="0.1" @change="(v) => fp.updateFurniture(item.id, { h: v })" />
+        </SettingsField>
+        <SettingsField label="Depth">
+          <SettingsNumber label="Depth" :value="item.d" :step="0.25" :min="0.1" @change="(v) => fp.updateFurniture(item.id, { d: v })" />
+        </SettingsField>
+      </div>
+    </SettingsSection>
+
+    <SettingsSection title="Rotation">
+      <div class="grid grid-cols-3 gap-2">
+        <SettingsField label="X">
+          <SettingsNumber label="Rotation X" :value="item.rotX ?? 0" :step="5" unit="°" @change="(v) => fp.updateFurniture(item.id, { rotX: v })" />
+        </SettingsField>
+        <SettingsField label="Y">
+          <SettingsNumber label="Rotation Y" :value="item.rotY ?? 0" :step="5" unit="°" @change="(v) => fp.updateFurniture(item.id, { rotY: v })" />
+        </SettingsField>
+        <SettingsField label="Z">
+          <SettingsNumber label="Rotation Z" :value="item.rotZ ?? 0" :step="5" unit="°" @change="(v) => fp.updateFurniture(item.id, { rotZ: v })" />
+        </SettingsField>
+      </div>
+    </SettingsSection>
+
+    <SettingsSection title="Shape">
+      <div class="segmented compact">
+        <button :aria-pressed="effectiveShape === 'box'" @click.stop="setBox()">Box</button>
+        <button :aria-pressed="effectiveShape === 'rounded'" @click.stop="setRounded()">Rounded</button>
+        <button :aria-pressed="effectiveShape === 'ellipse'" @click.stop="setEllipse()">Ellipse</button>
+        <button :aria-pressed="effectiveShape === 'sphere'" @click.stop="setSphere()">Sphere</button>
       </div>
 
-      <!-- Pill / Elliptical toggle -->
-      <div class="col-span-2 flex flex-col gap-1">
-        <span class="text-[10px] text-fg-muted uppercase tracking-wide">Style</span>
-        <div class="flex gap-1">
-          <button
-            class="flex-1 py-1 rounded-lg border text-[10px] transition-colors"
-            :class="(item.sphereStyle ?? 'pill') === 'pill' ? 'bg-accent/20 border-accent text-accent' : 'bg-bg border-bg-elevated text-fg-muted hover:border-accent/50'"
-            @click.stop="fp.updateFurniture(item.id, { sphereStyle: 'pill' })"
-          >Pill</button>
-          <button
-            class="flex-1 py-1 rounded-lg border text-[10px] transition-colors"
-            :class="(item.sphereStyle ?? 'pill') === 'elliptical' ? 'bg-accent/20 border-accent text-accent' : 'bg-bg border-bg-elevated text-fg-muted hover:border-accent/50'"
-            @click.stop="fp.updateFurniture(item.id, { sphereStyle: 'elliptical' })"
-          >Elliptical</button>
+      <!-- ── Sphere ── -->
+      <template v-if="effectiveShape === 'sphere'">
+        <div class="grid grid-cols-2 gap-3">
+          <SettingsField label="Coverage">
+            <div class="segmented compact">
+              <button :aria-pressed="(item.sphereMode ?? 'full') === 'full'" @click.stop="fp.updateFurniture(item.id, { sphereMode: 'full' })">Full</button>
+              <button :aria-pressed="(item.sphereMode ?? 'full') === 'half'" @click.stop="fp.updateFurniture(item.id, { sphereMode: 'half' })">Half</button>
+            </div>
+          </SettingsField>
+          <SettingsField label="Footprint">
+            <div class="segmented compact">
+              <button :aria-pressed="(item.sphereStyle ?? 'pill') === 'pill'" @click.stop="fp.updateFurniture(item.id, { sphereStyle: 'pill' })">Round</button>
+              <button :aria-pressed="(item.sphereStyle ?? 'pill') === 'elliptical'" @click.stop="fp.updateFurniture(item.id, { sphereStyle: 'elliptical' })">Oval</button>
+            </div>
+          </SettingsField>
         </div>
-        <p class="text-[9px] text-fg-muted leading-snug">
-          <template v-if="(item.sphereStyle ?? 'pill') === 'pill'">Circular footprint — XZ radius = min(W, D) / 2.</template>
-          <template v-else>Elliptical footprint — X = W / 2, Z = D / 2, Y = H / 2.</template>
+        <p class="field-hint -mt-1">
+          <template v-if="(item.sphereStyle ?? 'pill') === 'pill'">Circular footprint — radius is half the smaller of width and depth.</template>
+          <template v-else>Oval footprint — follows width, depth and height.</template>
         </p>
-      </div>
 
-      <!-- Cut-off position (half sphere only) -->
-      <template v-if="(item.sphereMode ?? 'full') === 'half'">
-        <label class="col-span-2 flex flex-col gap-1">
-          <span class="text-[10px] text-fg-muted uppercase tracking-wide">Cut position</span>
-          <div class="flex items-center gap-2">
-            <input type="range" min="-1" max="1" step="0.01"
-              class="flex-1 accent-accent"
+        <SettingsField v-if="(item.sphereMode ?? 'full') === 'half'" label="Cut position" hint="−1 = bottom · 0 = equator (true half) · +1 = top">
+          <div class="flex items-center gap-3">
+            <input
+              type="range" min="-1" max="1" step="0.01" class="flex-1 min-w-0 h-8 accent-accent"
               :value="item.sphereCutY ?? 0"
               @input="fp.updateFurniture(item.id, { sphereCutY: numVal($event) })"
             />
-            <input type="number" step="0.05" min="-1" max="1"
-              class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-16 shrink-0"
-              :value="item.sphereCutY ?? 0"
-              @change="fp.updateFurniture(item.id, { sphereCutY: Math.max(-1, Math.min(1, numVal($event))) })"
+            <SettingsNumber
+              class="!w-28 shrink-0" label="Cut position" :value="item.sphereCutY ?? 0" :step="0.05" :min="-1" :max="1"
+              @change="(v) => fp.updateFurniture(item.id, { sphereCutY: v })"
             />
           </div>
-          <span class="text-[9px] text-fg-muted">−1 = bottom · 0 = equator (true half) · +1 = top</span>
-        </label>
+        </SettingsField>
       </template>
 
-      <!-- Resolution slider (sphere) -->
-      <label class="col-span-2 flex flex-col gap-1">
-        <div class="flex items-center justify-between">
-          <span class="text-[10px] text-fg-muted uppercase tracking-wide">Resolution</span>
-          <button
-            v-if="item.segments !== undefined"
-            class="text-[9px] text-fg-muted hover:text-fg px-1"
-            @click.stop="fp.updateFurniture(item.id, { segments: undefined })"
-          >Auto ({{ autoSegments }})</button>
-          <span v-else class="text-[9px] text-fg-muted">Auto ({{ autoSegments }})</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <input type="range" min="8" max="128" step="1"
-            class="flex-1 accent-accent"
-            :value="item.segments ?? autoSegments"
-            @input="fp.updateFurniture(item.id, { segments: numVal($event) })"
-          />
-          <input type="number" min="8" max="128" step="1"
-            class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-16 shrink-0"
-            :value="item.segments ?? autoSegments"
-            @change="fp.updateFurniture(item.id, { segments: numVal($event) })"
-          />
-        </div>
-        <span class="text-[9px] text-fg-muted">Higher = smoother · lower = faster render</span>
-      </label>
-
-    </template>
-
-    <!-- Radius controls (rounded or ellipse) -->
-    <template v-if="effectiveShape !== 'box' && effectiveShape !== 'sphere'">
-
-      <!-- Uniform / Per-corner toggle (rounded and ellipse) -->
-      <div class="col-span-2 flex gap-1">
-        <button
-          class="flex-1 py-1 rounded-lg border text-[10px] transition-colors"
-          :class="!hasPerCorner ? 'bg-accent/20 border-accent text-accent' : 'bg-bg border-bg-elevated text-fg-muted hover:border-accent/50'"
-          @click.stop="disablePerCorner()"
-        >Uniform</button>
-        <button
-          class="flex-1 py-1 rounded-lg border text-[10px] transition-colors"
-          :class="hasPerCorner ? 'bg-accent/20 border-accent text-accent' : 'bg-bg border-bg-elevated text-fg-muted hover:border-accent/50'"
-          @click.stop="enablePerCorner()"
-        >Per corner</button>
-      </div>
-
-      <!-- Ellipse note (uniform only) -->
-      <p v-if="effectiveShape === 'ellipse' && !hasPerCorner" class="col-span-2 text-[9px] text-fg-muted leading-relaxed">
-        True oval footprint — adjust Width &amp; Depth for shape. Per corner gives independent arc control.
-      </p>
-
-      <!-- Uniform corner radius slider (rounded + uniform only) -->
-      <label v-if="effectiveShape === 'rounded' && !hasPerCorner" class="col-span-2 flex flex-col gap-1">
-        <span class="text-[10px] text-fg-muted uppercase tracking-wide">Corner radius (XZ)</span>
-        <div class="flex items-center gap-2">
-          <input type="range" min="0" :max="Math.min(item.w, item.d) / 2" step="0.01"
-            class="flex-1 accent-accent"
-            :value="item.radius ?? 0"
-            @input="fp.updateFurniture(item.id, { radius: numVal($event) })"
-          />
-          <input type="number" step="0.05" min="0"
-            class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-16 shrink-0"
-            :value="item.radius ?? 0"
-            @change="fp.updateFurniture(item.id, { radius: numVal($event) })"
-          />
-        </div>
-        <span class="text-[9px] text-fg-muted">0 = square corners · max = circle footprint</span>
-      </label>
-
-      <!-- Per-corner 2×2 grid (rounded mode) -->
-      <div v-if="hasPerCorner && effectiveShape === 'rounded'" class="col-span-2 flex flex-col gap-1">
-        <span class="text-[10px] text-fg-muted uppercase tracking-wide">Corner radii (XZ)</span>
-        <div class="grid grid-cols-2 gap-1.5">
-          <label v-for="corner in ([['↖ TL', 0], ['↗ TR', 1], ['↙ BL', 3], ['↘ BR', 2]] as [string, 0|1|2|3][])"
-            :key="corner[0]" class="flex flex-col gap-0.5">
-            <span class="text-[9px] text-fg-muted">{{ corner[0] }}</span>
-            <input type="number" step="0.05" min="0"
-              :max="Math.min(item.w, item.d) / 2"
-              class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-full"
-              :value="item.cornerRadii?.[corner[1]] ?? 0"
-              @change="setCorner(corner[1], numVal($event))"
-            />
-          </label>
-        </div>
-        <span class="text-[9px] text-fg-muted">Max = min(W,D) / 2</span>
-      </div>
-
-      <!-- Per-corner table with r + ρ (ellipse mode) -->
-      <div v-if="hasPerCorner && effectiveShape === 'ellipse'" class="col-span-2 flex flex-col gap-1">
-        <div class="grid gap-x-1.5 gap-y-1" style="grid-template-columns: auto 1fr 1fr">
-          <span></span>
-          <span class="text-[9px] text-fg-muted text-center uppercase tracking-wide">r</span>
-          <span class="text-[9px] text-fg-muted text-center uppercase tracking-wide">ρ</span>
-          <template v-for="corner in ([['↖ TL', 0], ['↗ TR', 1], ['↘ BR', 2], ['↙ BL', 3]] as [string, 0|1|2|3][])" :key="corner[0]">
-            <span class="text-[9px] text-fg-muted leading-none self-center">{{ corner[0] }}</span>
-            <input type="number" step="0.05" min="0" :max="item.w / 2"
-              class="bg-bg text-fg text-xs rounded-lg px-2 py-1 border border-bg-elevated w-full"
-              :value="item.cornerRadii?.[corner[1]] ?? 0"
-              @change="setCorner(corner[1], numVal($event))"
-            />
-            <input type="number" step="0.05" min="0"
-              class="bg-bg text-fg text-xs rounded-lg px-2 py-1 border border-bg-elevated w-full"
-              :value="+(item.cornerRho?.[corner[1]] ?? (item.d / item.w)).toFixed(3)"
-              @change="setCornerRho(corner[1], numVal($event))"
-            />
-          </template>
-        </div>
-        <span class="text-[9px] text-fg-muted">r = arc reach · ρ = ry/rx (1 = circle, D/W = oval)</span>
-      </div>
-
-      <!-- Y edge radius — uniform or per-edge (top / bottom) -->
-      <div class="col-span-2 flex flex-col gap-1">
-        <div class="flex items-center justify-between">
-          <span class="text-[10px] text-fg-muted uppercase tracking-wide">Edge roundness (Y)</span>
-          <div class="flex gap-0.5">
-            <button
-              class="py-0.5 px-2 rounded border text-[10px] transition-colors"
-              :class="!hasPerEdge ? 'bg-accent/20 border-accent text-accent' : 'bg-bg border-bg-elevated text-fg-muted hover:border-accent/50'"
-              @click.stop="disablePerEdge()"
-            >Uniform</button>
-            <button
-              class="py-0.5 px-2 rounded border text-[10px] transition-colors"
-              :class="hasPerEdge ? 'bg-accent/20 border-accent text-accent' : 'bg-bg border-bg-elevated text-fg-muted hover:border-accent/50'"
-              @click.stop="enablePerEdge()"
-            >Per edge</button>
+      <!-- ── Rounded / ellipse ── -->
+      <template v-if="effectiveShape === 'rounded' || effectiveShape === 'ellipse'">
+        <SettingsField label="Corners">
+          <div class="segmented compact">
+            <button :aria-pressed="!hasPerCorner" @click.stop="disablePerCorner()">Same for all</button>
+            <button :aria-pressed="hasPerCorner" @click.stop="enablePerCorner()">Per corner</button>
           </div>
-        </div>
-        <!-- Uniform -->
-        <template v-if="!hasPerEdge">
-          <div class="flex items-center gap-2">
-            <input type="range" min="0" :max="item.h / 2" step="0.01"
-              class="flex-1 accent-accent"
+        </SettingsField>
+
+        <p v-if="effectiveShape === 'ellipse' && !hasPerCorner" class="field-hint -mt-1">
+          True oval footprint — adjust width and depth to shape it. Per corner gives independent arc control.
+        </p>
+
+        <SettingsField v-if="effectiveShape === 'rounded' && !hasPerCorner" label="Corner radius" hint="0 = square corners · max = circular footprint">
+          <div class="flex items-center gap-3">
+            <input
+              type="range" min="0" :max="Math.min(item.w, item.d) / 2" step="0.01" class="flex-1 min-w-0 h-8 accent-accent"
+              :value="item.radius ?? 0"
+              @input="fp.updateFurniture(item.id, { radius: numVal($event) })"
+            />
+            <SettingsNumber
+              class="!w-28 shrink-0" label="Corner radius" :value="item.radius ?? 0" :step="0.05" :min="0"
+              @change="(v) => fp.updateFurniture(item.id, { radius: v })"
+            />
+          </div>
+        </SettingsField>
+
+        <SettingsField v-if="hasPerCorner && effectiveShape === 'rounded'" label="Corner radii" :hint="`Max ${(Math.min(item.w, item.d) / 2).toFixed(2)} (half the smaller side)`">
+          <div class="grid grid-cols-2 gap-2">
+            <div v-for="corner in ([['Top left', 0], ['Top right', 1], ['Bottom left', 3], ['Bottom right', 2]] as [string, 0|1|2|3][])" :key="corner[0]" class="flex flex-col gap-1">
+              <span class="text-[11px] text-fg-muted">{{ corner[0] }}</span>
+              <SettingsNumber
+                :label="corner[0]" :value="item.cornerRadii?.[corner[1]] ?? 0" :step="0.05" :min="0" :max="Math.min(item.w, item.d) / 2"
+                @change="(v) => setCorner(corner[1], v ?? 0)"
+              />
+            </div>
+          </div>
+        </SettingsField>
+
+        <SettingsField v-if="hasPerCorner && effectiveShape === 'ellipse'" label="Corner arcs" hint="Reach = how far the arc extends · ratio = arc height ÷ width (1 = circle)">
+          <div class="grid gap-x-2 gap-y-1.5 items-center" style="grid-template-columns: auto 1fr 1fr">
+            <span />
+            <span class="text-[11px] text-fg-muted text-center">Reach</span>
+            <span class="text-[11px] text-fg-muted text-center">Ratio</span>
+            <template v-for="corner in ([['Top left', 0], ['Top right', 1], ['Bottom right', 2], ['Bottom left', 3]] as [string, 0|1|2|3][])" :key="corner[0]">
+              <span class="text-[11px] text-fg-muted w-12 leading-tight">{{ corner[0] }}</span>
+              <SettingsNumber
+                :label="`${corner[0]} reach`" :value="item.cornerRadii?.[corner[1]] ?? 0" :step="0.05" :min="0" :max="item.w / 2"
+                @change="(v) => setCorner(corner[1], v ?? 0)"
+              />
+              <SettingsNumber
+                :label="`${corner[0]} ratio`" :value="+(item.cornerRho?.[corner[1]] ?? (item.d / item.w)).toFixed(3)" :step="0.05" :min="0"
+                @change="(v) => setCornerRho(corner[1], v ?? 0)"
+              />
+            </template>
+          </div>
+        </SettingsField>
+
+        <SettingsField label="Edge roundness" hint="0 = flat · max = dome / pillow">
+          <div class="segmented compact">
+            <button :aria-pressed="!hasPerEdge" @click.stop="disablePerEdge()">Same top &amp; bottom</button>
+            <button :aria-pressed="hasPerEdge" @click.stop="enablePerEdge()">Separate</button>
+          </div>
+          <div v-if="!hasPerEdge" class="flex items-center gap-3">
+            <input
+              type="range" min="0" :max="item.h / 2" step="0.01" class="flex-1 min-w-0 h-8 accent-accent"
               :value="item.radiusY ?? 0"
               @input="fp.updateFurniture(item.id, { radiusY: numVal($event) })"
             />
-            <input type="number" step="0.05" min="0"
-              class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-16 shrink-0"
-              :value="item.radiusY ?? 0"
-              @change="fp.updateFurniture(item.id, { radiusY: numVal($event) })"
+            <SettingsNumber
+              class="!w-28 shrink-0" label="Edge roundness" :value="item.radiusY ?? 0" :step="0.05" :min="0"
+              @change="(v) => fp.updateFurniture(item.id, { radiusY: v })"
             />
           </div>
-          <span class="text-[9px] text-fg-muted">0 = flat &middot; max = dome / pillow</span>
-        </template>
-        <!-- Per edge: top + bottom -->
-        <template v-else>
-          <div class="grid gap-x-2 gap-y-1" style="grid-template-columns: auto 1fr">
-            <span class="text-[9px] text-fg-muted self-center">↑ Top</span>
-            <input type="number" step="0.05" min="0" :max="item.h / 2"
-              class="bg-bg text-fg text-xs rounded-lg px-2 py-1 border border-bg-elevated w-full"
-              :value="item.edgeRadii?.[0] ?? 0"
-              @change="setEdge(0, numVal($event))"
-            />
-            <span class="text-[9px] text-fg-muted self-center">↓ Bottom</span>
-            <input type="number" step="0.05" min="0" :max="item.h / 2"
-              class="bg-bg text-fg text-xs rounded-lg px-2 py-1 border border-bg-elevated w-full"
-              :value="item.edgeRadii?.[1] ?? 0"
-              @change="setEdge(1, numVal($event))"
-            />
+          <div v-else class="grid grid-cols-2 gap-2">
+            <div class="flex flex-col gap-1">
+              <span class="text-[11px] text-fg-muted">Top</span>
+              <SettingsNumber label="Top edge" :value="item.edgeRadii?.[0] ?? 0" :step="0.05" :min="0" :max="item.h / 2" @change="(v) => setEdge(0, v ?? 0)" />
+            </div>
+            <div class="flex flex-col gap-1">
+              <span class="text-[11px] text-fg-muted">Bottom</span>
+              <SettingsNumber label="Bottom edge" :value="item.edgeRadii?.[1] ?? 0" :step="0.05" :min="0" :max="item.h / 2" @change="(v) => setEdge(1, v ?? 0)" />
+            </div>
           </div>
-          <span class="text-[9px] text-fg-muted">0 = flat &middot; max = dome</span>
-        </template>
-      </div>
+        </SettingsField>
+      </template>
 
-      <!-- Resolution slider -->
-      <label class="col-span-2 flex flex-col gap-1">
-        <div class="flex items-center justify-between">
-          <span class="text-[10px] text-fg-muted uppercase tracking-wide">Resolution</span>
-          <button
-            v-if="item.segments !== undefined"
-            class="text-[9px] text-fg-muted hover:text-fg px-1"
-            @click.stop="fp.updateFurniture(item.id, { segments: undefined })"
-          >Auto ({{ autoSegments }})</button>
-          <span v-else class="text-[9px] text-fg-muted">Auto ({{ autoSegments }})</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <input type="range" min="4" max="128" step="1"
-            class="flex-1 accent-accent"
+      <!-- Curve resolution (any curved shape) -->
+      <SettingsField
+        v-if="effectiveShape !== 'box'"
+        label="Smoothness"
+        hint="Higher = smoother curves · lower = faster on the Pi"
+        :resettable="item.segments !== undefined"
+        :reset-label="`Auto (${autoSegments})`"
+        @reset="fp.updateFurniture(item.id, { segments: undefined })"
+      >
+        <div class="flex items-center gap-3">
+          <input
+            type="range" :min="effectiveShape === 'sphere' ? 8 : 4" max="128" step="1" class="flex-1 min-w-0 h-8 accent-accent"
             :value="item.segments ?? autoSegments"
             @input="fp.updateFurniture(item.id, { segments: numVal($event) })"
           />
-          <input type="number" min="4" max="128" step="1"
-            class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-16 shrink-0"
-            :value="item.segments ?? autoSegments"
-            @change="fp.updateFurniture(item.id, { segments: numVal($event) })"
+          <SettingsNumber
+            class="!w-28 shrink-0" label="Smoothness" :value="item.segments ?? autoSegments" :step="1" :min="effectiveShape === 'sphere' ? 8 : 4" :max="128"
+            @change="(v) => fp.updateFurniture(item.id, { segments: v })"
           />
         </div>
-        <span class="text-[9px] text-fg-muted">Higher = smoother curves · lower = faster render</span>
-      </label>
+      </SettingsField>
+    </SettingsSection>
 
-    </template>
-
-    <!-- Subtract boolean (group-only feature) -->
-    <div class="col-span-2 flex flex-col gap-1">
-      <span class="text-[10px] text-fg-muted uppercase tracking-wide">Boolean</span>
-      <div class="flex gap-1">
-        <button
-          class="flex-1 py-1.5 rounded-lg border text-xs transition-colors"
-          :class="!item.subtract ? 'bg-accent/20 border-accent text-accent' : 'bg-bg border-bg-elevated text-fg-muted hover:border-accent/50'"
-          @click.stop="fp.updateFurniture(item.id, { subtract: undefined })"
-        >Solid</button>
-        <button
-          class="flex-1 py-1.5 rounded-lg border text-xs transition-colors"
-          :class="item.subtract ? 'bg-rose-500/20 border-rose-500 text-rose-400' : 'bg-bg border-bg-elevated text-fg-muted hover:border-rose-500/40'"
-          @click.stop="fp.updateFurniture(item.id, { subtract: true })"
-        >Subtract</button>
-      </div>
-      <span v-if="item.subtract && !item.groupId" class="text-[9px] text-rose-400/80">Add to a group to cut holes in solid siblings</span>
-      <span v-else-if="item.subtract" class="text-[9px] text-rose-400/80">Cuts a hole in all solid siblings · visible in edit mode only</span>
-    </div>
-
-    <!-- Color (hidden for subtract items — they always render red) -->
-    <label v-if="!item.subtract" class="col-span-2 flex flex-col gap-1">
-      <span class="text-[10px] text-fg-muted uppercase tracking-wide">Color</span>
-      <div class="flex items-center gap-2">
-        <input
-          type="color"
-          class="h-8 w-10 rounded cursor-pointer border border-bg-elevated bg-bg p-0.5 shrink-0"
-          :value="item.color ?? '#808080'"
-          @input="fp.updateFurniture(item.id, { color: ($event.target as HTMLInputElement).value })"
-        />
-        <input
-          class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-full font-mono"
-          :value="item.color ?? ''"
-          placeholder="auto (theme)"
-          maxlength="7"
-          @change="fp.updateFurniture(item.id, { color: ($event.target as HTMLInputElement).value.trim() || undefined })"
-        />
-        <button
-          v-if="item.color"
-          class="text-xs text-fg-muted hover:text-fg shrink-0 px-1"
-          title="Reset to theme color"
-          @click.stop="fp.updateFurniture(item.id, { color: undefined })"
-        >✕</button>
-      </div>
-    </label>
+    <SettingsSection title="Appearance">
+      <SettingsField
+        label="Type"
+        :hint="item.subtract
+          ? (item.groupId ? 'Cuts a hole in the other parts of its group · only visible while editing' : 'Add this to a group to cut holes in the other parts')
+          : undefined"
+      >
+        <div class="segmented compact">
+          <button :aria-pressed="!item.subtract" @click.stop="fp.updateFurniture(item.id, { subtract: undefined })">Solid</button>
+          <button :aria-pressed="!!item.subtract" @click.stop="fp.updateFurniture(item.id, { subtract: true })">Cut-out</button>
+        </div>
+      </SettingsField>
+      <!-- Cut-outs always render red, so colour doesn't apply -->
+      <SettingsField v-if="!item.subtract" label="Colour">
+        <SettingsColor :value="item.color" placeholder="Theme colour" @update="(v) => fp.updateFurniture(item.id, { color: v })" />
+      </SettingsField>
+    </SettingsSection>
   </div>
 </template>

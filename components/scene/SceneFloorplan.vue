@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import { Shape, BoxGeometry, ExtrudeGeometry, BufferGeometry, MeshBasicMaterial, MeshDepthMaterial, Mesh, FrontSide } from 'three'
+import {
+  Shape, BoxGeometry, ExtrudeGeometry, BufferGeometry, MeshBasicMaterial, MeshDepthMaterial, MeshStandardMaterial, Mesh, FrontSide,
+  Matrix4, Quaternion, Euler, Vector3,
+} from 'three'
+import { requestShadowUpdate } from '~/composables/useShadowUpdates'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import type { FloorplanRoom, FloorplanFurniture } from '~/stores/floorplan'
 import {
@@ -9,6 +13,7 @@ import {
   type HoleInfo,
 } from '~/utils/furnitureGeometry'
 import { getAdapter } from '~/utils/deviceRegistry'
+import { detectAppliance } from '~/utils/appliance'
 
 const sceneColors = useSceneColors()
 const fp = useFloorplanStore()
@@ -23,6 +28,9 @@ const lightSourceVisuals = computed(() => {
     if (!p.lightSourceFurnitureId) continue
     const entity = entities.get(p.entity_id)
     if (!entity) continue
+    // Washers / dryers only anchor their 3D effect on the furniture — the
+    // appliance itself shouldn't glow like a lamp.
+    if (detectAppliance(entity, p.icon)) continue
     const adapter = getAdapter(entity)
     if (!adapter) continue
     const v = adapter.getDisplayState(entity)
@@ -597,6 +605,7 @@ watch(wallPieces, (pieces) => {
   }
   prevShort?.dispose()
   prevTall?.dispose()
+  requestShadowUpdate()
 }, { immediate: true })
 
 onBeforeUnmount(() => {
@@ -732,6 +741,7 @@ watch(blockerPieces, (pieces) => {
     blockerMesh.visible = false
   }
   prev?.dispose()
+  requestShadowUpdate()
 }, { immediate: true })
 
 onBeforeUnmount(() => {
@@ -942,7 +952,92 @@ function getFurnitureGeometry(item: FloorplanFurniture): BufferGeometry {
   return geo
 }
 
+// ─── Static furniture batching ───────────────────────────────────────────────
+// Outside edit mode furniture isn't interactive, so every piece that isn't a
+// light-source emitter (whose emissive glow changes with its lamp) is baked
+// into one merged mesh per colour. A floorplan goes from one draw call per
+// piece to a handful, which matters on Pi-class CPUs while the camera moves.
+// In edit mode every piece renders on its own again so it can be selected.
+const DEG = Math.PI / 180
+const _pos = new Vector3(), _quat = new Quaternion(), _euler = new Euler(), _one = new Vector3(1, 1, 1)
+const _groupM = new Matrix4(), _itemM = new Matrix4()
+function composeTRS(out: Matrix4, x: number, y: number, z: number, rx: number, ry: number, rz: number) {
+  _euler.set(rx * DEG, ry * DEG, rz * DEG)
+  return out.compose(_pos.set(x, y, z), _quat.setFromEuler(_euler), _one)
+}
+
+/** Copy of an item geometry in world space, reduced to position + normal so all pieces merge. */
+function bakeFurnitureGeo(item: FloorplanFurniture, groupM: Matrix4 | null): BufferGeometry {
+  const src = getFurnitureGeometry(item)
+  const g = src.index ? src.toNonIndexed() : src.clone()
+  for (const name of Object.keys(g.attributes)) {
+    if (name !== 'position' && name !== 'normal') g.deleteAttribute(name)
+  }
+  g.morphAttributes = {}
+  g.clearGroups()
+  if (!g.attributes.normal) g.computeVertexNormals()
+  composeTRS(_itemM, item.x, item.y, item.z, item.rotX ?? 0, item.rotY ?? 0, item.rotZ ?? 0)
+  if (groupM) _itemM.premultiply(groupM)
+  g.applyMatrix4(_itemM)
+  return g
+}
+
+/** Emitter IDs as a string, so entity state churn doesn't trigger a rebuild. */
+const emitterKey = computed(() => [...lightSourceVisuals.value.keys()].sort().join('|'))
+
+const furnitureBatches = shallowRef<Mesh[]>([])
+const batchedIds = shallowRef<Set<string>>(new Set())
+
+function disposeBatches(meshes: Mesh[]) {
+  for (const m of meshes) {
+    m.geometry.dispose()
+    ;(m.material as MeshStandardMaterial).dispose()
+  }
+}
+
+watch(
+  [() => fp.editMode, emitterKey, () => sceneColors.value.furniture, () => fp.furniture, () => fp.furnitureGroups],
+  () => {
+    const prev = furnitureBatches.value
+    const ids = new Set<string>()
+    const meshes: Mesh[] = []
+    if (!fp.editMode) {
+      const emitters = new Set(lightSourceVisuals.value.keys())
+      const byColor = new Map<string, BufferGeometry[]>()
+      for (const item of fp.furniture) {
+        if (item.subtract || emitters.has(item.id)) continue
+        let groupM: Matrix4 | null = null
+        if (item.groupId) {
+          const grp = fp.furnitureGroups.find((g) => g.id === item.groupId)
+          if (!grp) continue   // orphaned items aren't rendered individually either
+          groupM = composeTRS(_groupM, grp.x ?? 0, grp.y ?? 0, grp.z ?? 0, grp.rotX ?? 0, grp.rotY ?? 0, grp.rotZ ?? 0)
+        }
+        const color = furnitureColor(item)
+        const list = byColor.get(color)
+        const geo = bakeFurnitureGeo(item, groupM)
+        if (list) list.push(geo); else byColor.set(color, [geo])
+        ids.add(item.id)
+      }
+      for (const [color, geos] of byColor) {
+        const merged = mergeGeometries(geos, false)
+        for (const g of geos) g.dispose()
+        if (!merged) continue
+        const mesh = new Mesh(merged, new MeshStandardMaterial({ color, roughness: 0.7 }))
+        mesh.receiveShadow = true
+        meshes.push(mesh)
+      }
+    }
+    furnitureBatches.value = meshes
+    batchedIds.value = ids
+    disposeBatches(prev)
+  },
+  { deep: true, immediate: true },
+)
+
+watch(windowPieces, () => requestShadowUpdate())
+
 onUnmounted(() => {
+  disposeBatches(furnitureBatches.value)
   for (const { geo } of _geoCache.values()) geo.dispose()
   _geoCache.clear()
   for (const { geo } of _wallGeoCache.values()) geo.dispose()
@@ -1047,6 +1142,9 @@ onUnmounted(() => {
       />
     </TresMesh>
 
+    <!-- Static furniture merged per colour (outside edit mode) -->
+    <primitive v-for="(mesh, i) in furnitureBatches" :key="`fb-${i}-${mesh.uuid}`" :object="mesh" />
+
     <!-- Furniture: grouped items wrapped in TresGroup with group-level transform -->
     <TresGroup
       v-for="group in fp.furnitureGroups"
@@ -1055,7 +1153,7 @@ onUnmounted(() => {
       :rotation="[(group.rotX ?? 0) * Math.PI / 180, (group.rotY ?? 0) * Math.PI / 180, (group.rotZ ?? 0) * Math.PI / 180]"
     >
       <TresMesh
-        v-for="item in fp.furniture.filter(f => f.groupId === group.id)"
+        v-for="item in fp.furniture.filter(f => f.groupId === group.id && !batchedIds.has(f.id))"
         :key="item.id"
         :geometry="getFurnitureGeometry(item)"
         :position="[item.x, item.y, item.z]"
@@ -1085,7 +1183,7 @@ onUnmounted(() => {
 
     <!-- Ungrouped furniture -->
     <TresMesh
-      v-for="item in fp.furniture.filter(f => !f.groupId)"
+      v-for="item in fp.furniture.filter(f => !f.groupId && !batchedIds.has(f.id))"
       :key="item.id"
       :geometry="getFurnitureGeometry(item)"
       :position="[item.x, item.y, item.z]"

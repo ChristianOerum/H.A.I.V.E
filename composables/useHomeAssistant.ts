@@ -126,9 +126,20 @@ export function useHomeAssistant() {
     target?: { entity_id?: string | string[] },
   ): Promise<unknown> {
     if (mockActive) return mockCallService(domain, service, serviceData, target)
-    const conn = await (connectionPromise ?? start())
-    if (!conn) return mockCallService(domain, service, serviceData, target)
-    return haCallService(conn, domain, service, serviceData, target)
+    try {
+      const conn = await (connectionPromise ?? start())
+      if (!conn) return mockCallService(domain, service, serviceData, target)
+      return await haCallService(conn, domain, service, serviceData, target)
+    } catch (err) {
+      // Callers fire-and-forget, so surface the failure here rather than
+      // letting it vanish as an unhandled rejection. The next state event
+      // from HA reverts any optimistic update the caller applied.
+      const id = Array.isArray(target?.entity_id) ? target.entity_id[0] : target?.entity_id
+      const name = (id && store.get(id)?.attributes.friendly_name) || id || domain
+      const reason = (err as { message?: string })?.message
+      useToast().error(`Couldn't update ${name}${reason ? ` — ${reason}` : ''}`)
+      return undefined
+    }
   }
 
   function stop() {

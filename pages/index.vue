@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { Icon } from '@iconify/vue'
+
 const entities = useEntitiesStore()
 const layout = useLayoutStore()
 const fp = useFloorplanStore()
@@ -6,6 +8,7 @@ const theme = useThemeStore()
 const { start } = useHomeAssistant()
 const device = useDeviceConfig()
 useLiveSync()
+const { unlocked } = useAuth()
 
 useHead({
   title: 'H.A.I.V.E.',
@@ -26,6 +29,18 @@ async function boot() {
   await start().catch(() => {
     /* error surfaced via store */
   })
+}
+
+const showEmptyState = computed(() =>
+  entities.status === 'connected'
+  && entities.list.length > 0
+  && layout.placements.length === 0
+  && !fp.editMode,
+)
+
+function openDeviceEditor() {
+  fp.editorTab = 'devices'
+  if (!fp.editMode) fp.toggleEditMode()
 }
 
 function onSetupDone() {
@@ -61,16 +76,29 @@ onMounted(async () => {
     <WifiQrButton v-if="!layout.selectedEntityId && !fp.editMode" />
     <VersionWatermark />
 
+    <ClientOnly><MarkerHint /></ClientOnly>
+    <ConnectionBanner />
+    <ToastHost />
+
+    <!-- Empty state: connected, but nothing placed on the floorplan yet -->
     <div
-      v-if="!device.config.value.haConfigured && entities.list.length === 0 && entities.status !== 'connecting'"
-      class="absolute inset-0 flex items-center justify-center pointer-events-none"
+      v-if="showEmptyState"
+      class="absolute inset-0 z-10 flex items-center justify-center p-6 pointer-events-none"
     >
-      <div class="text-center text-fg-muted max-w-md p-6 bg-bg-panel/80 rounded-2xl pointer-events-auto">
-        <h2 class="text-xl mb-2 text-fg">No devices placed</h2>
-        <p class="text-sm">
-          No Home Assistant connection yet. Run <strong>Factory Reset</strong> in settings to reconfigure, then add
-          placements to <code>config/entities.json</code>.
+      <div class="surface pointer-events-auto rounded-3xl px-8 py-7 max-w-sm text-center flex flex-col items-center gap-3">
+        <div class="w-14 h-14 rounded-2xl bg-accent/15 text-accent flex items-center justify-center">
+          <Icon icon="mdi:floor-plan" width="30" height="30" />
+        </div>
+        <h2 class="text-lg font-semibold">No devices on your floorplan yet</h2>
+        <p class="text-sm text-fg-muted leading-snug">
+          Connected to Home Assistant with {{ entities.list.length }} entities available.
+          Place them in the rooms to control them from here.
         </p>
+        <button v-if="unlocked" class="btn-touch mt-1 gap-2 text-sm bg-accent !text-bg font-semibold" @click="openDeviceEditor">
+          <Icon icon="mdi:plus" width="18" height="18" />
+          <span>Add devices</span>
+        </button>
+        <p v-else class="text-xs text-fg-muted">Unlock with the toolbar PIN to add devices.</p>
       </div>
     </div>
   </div>

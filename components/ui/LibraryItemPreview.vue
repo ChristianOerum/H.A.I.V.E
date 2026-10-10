@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { TresCanvas } from '@tresjs/core'
 import * as THREE from 'three'
 import { resolveFurnitureGeometry } from '~/utils/furnitureGeometry'
 import type { FloorplanFurniture } from '~/stores/floorplan'
 import type { BufferGeometry } from 'three'
+import { acquireThumbnailRenderer, releaseThumbnailRenderer, renderThumbnail } from '~/utils/furnitureThumbnail'
 
 const props = defineProps<{
   preset: {
@@ -68,62 +68,67 @@ const cameraSetup = computed(() => {
     target:   [cx, cy, cz] as [number, number, number],
   }
 })
+
+// ─── Still thumbnail ──────────────────────────────────────────────────────────
+// Rendered once to an <img> by a shared offscreen renderer (see
+// utils/furnitureThumbnail) instead of a live canvas per card.
+
+const box = ref<HTMLDivElement | null>(null)
+const src = ref<string | null>(null)
+
+function render() {
+  const el = box.value
+  if (!el || !el.clientWidth || !el.clientHeight) return
+  const c = sceneColors.value
+  const scene = new THREE.Scene()
+  scene.background = new THREE.Color(c.clear)
+
+  scene.add(new THREE.AmbientLight(0xffffff, c.ambient * 2.5))
+  const key = new THREE.DirectionalLight(0xffffff, c.sun * 0.9)
+  key.position.set(4, 8, 6)
+  key.castShadow = true
+  scene.add(key)
+  const fill = new THREE.DirectionalLight(0xffffff, c.sun * 0.25)
+  fill.position.set(-3, 5, -4)
+  scene.add(fill)
+
+  const materials: THREE.Material[] = []
+  for (const item of items.value) {
+    const mat = item.subtract
+      ? new THREE.MeshStandardMaterial({ color: '#ff5533', transparent: true, opacity: 0.35, depthWrite: false })
+      : new THREE.MeshStandardMaterial({ color: item.color ?? c.furniture, roughness: 0.65, metalness: 0.05 })
+    materials.push(mat)
+    const mesh = new THREE.Mesh(getGeometry(item), mat)
+    mesh.position.set(item.x, item.y, item.z)
+    mesh.rotation.set((item.rotX ?? 0) * Math.PI / 180, (item.rotY ?? 0) * Math.PI / 180, (item.rotZ ?? 0) * Math.PI / 180)
+    mesh.castShadow = true
+    mesh.receiveShadow = !item.subtract
+    scene.add(mesh)
+  }
+
+  const { position, target } = cameraSetup.value
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.05, 100)
+  camera.position.set(...position)
+  camera.lookAt(...target)
+
+  src.value = renderThumbnail(scene, camera, el.clientWidth, el.clientHeight)
+
+  key.shadow.map?.dispose()
+  for (const m of materials) m.dispose()
+}
+
+onMounted(() => {
+  acquireThumbnailRenderer()
+  render()
+})
+onUnmounted(releaseThumbnailRenderer)
+watch([items, sceneColors], render)
+// The card can still be zero-sized on mount (modal opening); draw once it has a size.
+useResizeObserver(box, () => { if (!src.value) render() })
 </script>
 
 <template>
-  <div class="w-full aspect-video rounded-lg overflow-hidden bg-[#1e293b]">
-    <TresCanvas
-      :clear-color="sceneColors.clear"
-      class="!w-full !h-full"
-    >
-      <TresPerspectiveCamera
-        :position="cameraSetup.position"
-        :look-at="cameraSetup.target"
-        :fov="45"
-        :near="0.05"
-        :far="100"
-      />
-
-      <!-- Lighting -->
-      <TresAmbientLight :intensity="sceneColors.ambient * 2.5" />
-      <TresDirectionalLight
-        :position="[4, 8, 6]"
-        :intensity="sceneColors.sun * 0.9"
-        :cast-shadow="true"
-      />
-      <TresDirectionalLight
-        :position="[-3, 5, -4]"
-        :intensity="sceneColors.sun * 0.25"
-      />
-
-      <!-- Items -->
-      <TresMesh
-        v-for="item in items"
-        :key="item.id"
-        :geometry="getGeometry(item)"
-        :position="[item.x, item.y, item.z]"
-        :rotation="[
-          (item.rotX ?? 0) * Math.PI / 180,
-          (item.rotY ?? 0) * Math.PI / 180,
-          (item.rotZ ?? 0) * Math.PI / 180,
-        ]"
-        :cast-shadow="true"
-        :receive-shadow="!item.subtract"
-      >
-        <TresMeshStandardMaterial
-          v-if="!item.subtract"
-          :color="item.color ?? sceneColors.furniture"
-          :roughness="0.65"
-          :metalness="0.05"
-        />
-        <TresMeshStandardMaterial
-          v-else
-          color="#ff5533"
-          :transparent="true"
-          :opacity="0.35"
-          :depth-write="false"
-        />
-      </TresMesh>
-    </TresCanvas>
+  <div ref="box" class="w-full aspect-video rounded-lg overflow-hidden bg-[#1e293b]">
+    <img v-if="src" :src="src" :alt="preset.label" class="w-full h-full object-cover" draggable="false" />
   </div>
 </template>

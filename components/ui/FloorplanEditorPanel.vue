@@ -1,102 +1,30 @@
 <script setup lang="ts">
 import { Icon } from '@iconify/vue'
-import { getAdapter } from '~/utils/deviceRegistry'
-import { hexToHue, hexToHsl, hslToHex, hueToHex, hueToHexLight, rgbTripletToHex, hexToRgbTriplet, DARK_PALETTES, LIGHT_PALETTES, type DarkVariant, type LightVariant, type CustomPalette } from '~/stores/theme'
+import type { FloorplanEditorTab } from '~/stores/floorplan'
 
 const fp = useFloorplanStore()
 const layout = useLayoutStore()
-const entities = useEntitiesStore()
 const theme = useThemeStore()
+const toast = useToast()
 
-// ---- Server / factory reset ----
-const device = useDeviceConfig()
-const confirmingReset = ref(false)
-const resetting = ref(false)
-
-// ---- Server LAN IP (useful when deployed headless, e.g. as an HA add-on) ----
-const deviceIp = ref<string | null>(null)
-async function refreshDeviceIp() {
-  try {
-    const res = await $fetch<{ ip: string | null }>('/api/ip')
-    deviceIp.value = res.ip
-  } catch {
-    deviceIp.value = null
-  }
-}
-onMounted(refreshDeviceIp)
-
-/** Address to hand to other screens. Falls back to the LAN IP on a local kiosk. */
-const origin = ref('')
-onMounted(() => { origin.value = window.location.origin })
-const shareUrl = computed(() => {
-  if (!origin.value) return ''
-  const { protocol, hostname, port } = new URL(origin.value)
-  const isLoopback = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]'
-  if (isLoopback && deviceIp.value) return `${protocol}//${deviceIp.value}${port ? `:${port}` : ''}`
-  return origin.value
-})
-
-const haSourceLabel = computed(() => {
-  switch (device.config.value.haSource) {
-    case 'supervisor': return 'Add-on'
-    case 'manual': return 'Direct'
-    default: return 'Not connected'
-  }
-})
-
-async function doFactoryReset() {
-  resetting.value = true
-  try {
-    await device.factoryReset()
-    if (import.meta.client) location.reload()
-  } finally {
-    resetting.value = false
-    confirmingReset.value = false
-  }
-}
+const TABS: { id: FloorplanEditorTab; label: string; icon: string }[] = [
+  { id: 'rooms', label: 'Rooms', icon: 'mdi:floor-plan' },
+  { id: 'furniture', label: 'Furniture', icon: 'mdi:sofa-outline' },
+  { id: 'devices', label: 'Devices', icon: 'mdi:devices' },
+  { id: 'preferences', label: 'Appearance', icon: 'mdi:palette-outline' },
+  { id: 'system', label: 'System', icon: 'mdi:cog-outline' },
+]
 
 const tab = computed({
   get: () => fp.editorTab,
-  set: (v) => { fp.editorTab = v },
+  set: (v: FloorplanEditorTab) => {
+    fp.editorTab = v
+    fp.deselect()
+  },
 })
-const selectedOpeningId = ref<string | null>(null)
-const selectedDeviceId = ref<string | null>(null)
-const newDeviceEntityId = ref('')
 
-/** Locally-tracked set of expanded group IDs — resets to empty when the furniture tab opens. */
-const expandedGroupIds = ref(new Set<string>())
-
-/** Group ID currently open in the isolated 3D editor, or null if closed. */
-const viewerGroupId = ref<string | null>(null)
-watch(() => fp.editorTab, (t) => { if (t === 'furniture') expandedGroupIds.value = new Set() })
-
-function toggleGroup(id: string) {
-  const s = new Set(expandedGroupIds.value)
-  if (s.has(id)) s.delete(id)
-  else s.add(id)
-  expandedGroupIds.value = s
-}
-
-function selectItem(type: 'room' | 'furniture', id: string) {
-  if (fp.selection?.id === id) fp.deselect()
-  else fp.select(type, id)
-}
-
-function toggleOpening(id: string) {
-  selectedOpeningId.value = selectedOpeningId.value === id ? null : id
-}
-
-function numVal(e: Event) {
-  return +(e.target as HTMLInputElement).value
-}
-
-/** Length in metres of edge `i` of a room (vertex i → vertex i+1). */
-function edgeLength(room: { vertices: [number, number][] }, i: number): number {
-  const n = room.vertices.length
-  const a = room.vertices[i]
-  const b = room.vertices[(i + 1) % n]
-  return Math.hypot(b[0] - a[0], b[1] - a[1])
-}
+// Undo/redo only covers the floorplan (rooms + furniture).
+const showHistory = computed(() => tab.value === 'rooms' || tab.value === 'furniture')
 
 function onKeyDown(e: KeyboardEvent) {
   if (!fp.editMode) return
@@ -105,278 +33,88 @@ function onKeyDown(e: KeyboardEvent) {
   if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); fp.undo() }
   else if (e.key === 'y' || (e.key === 'z' && e.shiftKey)) { e.preventDefault(); fp.redo() }
 }
-
 onMounted(() => window.addEventListener('keydown', onKeyDown))
 onUnmounted(() => window.removeEventListener('keydown', onKeyDown))
 
-// ---- Devices tab helpers ----
-function entityLabel(entityId: string): string {
-  const e = entities.get(entityId)
-  return (e?.attributes?.friendly_name as string | undefined) ?? entityId
-}
+// ── Unsaved changes, across every tab ──
+const appearanceDirty = computed(() => theme.accentDirty || theme.variantDirty || theme.uiScaleDirty)
+const dirtyByTab = computed<Record<FloorplanEditorTab, boolean>>(() => ({
+  rooms: fp.dirty,
+  furniture: fp.dirty,
+  devices: layout.dirty,
+  preferences: appearanceDirty.value,
+  system: false,
+}))
+const anyDirty = computed(() => fp.dirty || layout.dirty || appearanceDirty.value)
 
-function getAutoIcon(entityId: string): string {
-  const entity = entities.get(entityId)
-  if (entity) {
-    const adapter = getAdapter(entity)
-    if (adapter?.icon) return adapter.icon
-  }
-  if (entityId.includes('temperature')) return 'mdi:thermometer'
-  if (entityId.includes('humidity'))    return 'mdi:water-percent'
-  if (entityId.includes('blinds') || entityId.includes('cover')) return 'mdi:blinds'
-  if (entityId.includes('garage'))      return 'mdi:garage'
-  if (entityId.includes('tv') || entityId.includes('television')) return 'mdi:television'
-  if (entityId.includes('camera'))      return 'mdi:camera'
-  if (entityId.includes('door'))        return 'mdi:door'
-  if (entityId.includes('lock'))        return 'mdi:lock'
-  if (entityId.includes('motion'))      return 'mdi:motion-sensor'
-  return 'mdi:help-circle'
-}
-
-const placedIds = computed(() => new Set(layout.placements.map((p) => p.entity_id)))
-
-const availableEntities = computed(() =>
-  entities.list
-    .filter((e) => !placedIds.value.has(e.entity_id))
-    .sort((a, b) => a.entity_id.localeCompare(b.entity_id)),
-)
-
-// ---- Device search (placed list) ----
-const deviceSearch = ref('')
-const filteredPlacements = computed(() => {
-  const q = deviceSearch.value.toLowerCase().trim()
-  return layout.placements.filter((p) => {
-    // Only list placements backed by a live entity. This hides the saved
-    // placements while connecting / disconnected / errored (no entities loaded
-    // yet), instead of showing stale demo devices before HA is actually up.
-    if (entities.status !== 'idle' && !entities.get(p.entity_id)) return false
-    if (!q) return true
-    const label = entityLabel(p.entity_id).toLowerCase()
-    return label.includes(q) || p.entity_id.toLowerCase().includes(q)
-  })
-})
-
-// ---- Add-device modal ----
-const addDeviceSearch = ref('')
-const showAddDeviceModal = ref(false)
-const addDeviceModalInput = ref<HTMLInputElement | null>(null)
-
-watch(showAddDeviceModal, async (v) => {
-  if (v) {
-    addDeviceSearch.value = ''
-    await nextTick()
-    addDeviceModalInput.value?.focus()
-  }
-})
-
-const filteredAvailableEntities = computed(() => {
-  const q = addDeviceSearch.value.toLowerCase().trim()
-  const base = availableEntities.value
-  if (!q) return base.slice(0, 80)
-  return base
-    .filter((e) => {
-      const name = ((e.attributes?.friendly_name as string | undefined) ?? '').toLowerCase()
-      return name.includes(q) || e.entity_id.toLowerCase().includes(q)
-    })
-    .slice(0, 80)
-})
-
-function selectAddDevice(entityId: string) {
-  showAddDeviceModal.value = false
-  addDeviceSearch.value = ''
-  layout.addPlacement(entityId)
-  selectedDeviceId.value = entityId
-}
-
-// ---- Orphaned placements (entity no longer exists in active source) ----
-function isOrphan(entityId: string): boolean {
-  return entities.status !== 'idle' && entities.status !== 'connecting' && !entities.get(entityId)
-}
-const orphanedPlacements = computed(() =>
-  layout.placements.filter((p) => isOrphan(p.entity_id)),
-)
-function removeOrphans() {
-  for (const p of orphanedPlacements.value) {
-    layout.deletePlacement(p.entity_id)
-  }
-  selectedDeviceId.value = null
-}
-
-function entityDomain(entityId: string): string {
-  return entityId.split('.')[0]
-}
-function entityState(entityId: string): string {
-  return entities.get(entityId)?.state ?? ''
-}
-
-// Per-light 3D brightness multiplier bounds (used by the editor slider).
-const LIGHT_MULT_MIN = 0.1
-const LIGHT_MULT_MAX = 5
-
-function onAddDevice() {
-  if (!newDeviceEntityId.value) return
-  layout.addPlacement(newDeviceEntityId.value)
-  selectedDeviceId.value = newDeviceEntityId.value
-  newDeviceEntityId.value = ''
-  addDeviceSearch.value = ''
-}
-
-function onPositionChange(entityId: string, axis: 0 | 1 | 2, e: Event) {
-  const p = layout.placements.find((x) => x.entity_id === entityId)
-  if (!p) return
-  const pos: [number, number, number] = [...p.position]
-  pos[axis] = +(e.target as HTMLInputElement).value
-  layout.updatePlacement(entityId, { position: pos })
-}
-
-// ---- Save (floorplan or layout depending on active tab) ----
-const isDirty = computed(() =>
-  tab.value === 'preferences'
-    ? theme.accentHue !== theme.accentHueSaved || theme.variantDirty || theme.uiScaleDirty
-    : tab.value === 'devices' ? layout.dirty : fp.dirty,
-)
-function onSave() {
-  if (tab.value === 'preferences') {
-    theme.saveAccentHue()
-    theme.savePaletteVariants()
-    theme.saveUiScale()
-  }
-  else if (tab.value === 'devices') layout.save()
-  else fp.save()
-}
-
-// ---- Preferences (accent colour) ----
-const ACCENT_PRESETS: { label: string; hue: number }[] = [
-  { label: 'Teal',   hue: 174 },
-  { label: 'Blue',   hue: 217 },
-  { label: 'Indigo', hue: 243 },
-  { label: 'Purple', hue: 270 },
-  { label: 'Rose',   hue: 347 },
-  { label: 'Amber',  hue:  38 },
-  { label: 'Green',  hue: 142 },
-]
-
-// ---- Custom palette editor ----
-const editingPaletteId = ref<string | null>(null)
-const showImport = ref(false)
-const importJson = ref('')
-
-function startEditPalette(id: string) {
-  editingPaletteId.value = editingPaletteId.value === id ? null : id
-}
-
-function copyExport() {
-  navigator.clipboard.writeText(theme.exportCustomPalettes())
-}
-
-function doImport() {
+const saving = ref(false)
+async function saveAll(): Promise<boolean> {
+  saving.value = true
   try {
-    theme.importCustomPalettes(importJson.value)
-    importJson.value = ''
-    showImport.value = false
-  } catch {
-    // invalid JSON — leave textarea open
-  }
-}
-
-function updatePaletteField(id: string, field: keyof CustomPalette, e: Event) {
-  theme.updateCustomPalette(id, { [field]: (e.target as HTMLInputElement).value })
-}
-
-function updatePaletteBgField(id: string, field: 'bg' | 'bgPanel' | 'bgElevated' | 'fg' | 'fgMuted', e: Event) {
-  theme.updateCustomPalette(id, { [field]: hexToRgbTriplet((e.target as HTMLInputElement).value) })
-}
-
-// Resolved palette objects for the preview cards (tracks variant changes reactively)
-function resolvePalette(key: string, type: 'dark' | 'light') {
-  if (type === 'dark')
-    return DARK_PALETTES[key as DarkVariant] ?? (theme.customPalettes ?? []).find(p => p.id === key) ?? DARK_PALETTES.slate
-  return LIGHT_PALETTES[key as LightVariant] ?? (theme.customPalettes ?? []).find(p => p.id === key) ?? LIGHT_PALETTES.warm
-}
-const darkPreview  = computed(() => resolvePalette(theme.darkVariant,  'dark'))
-const lightPreview = computed(() => resolvePalette(theme.lightVariant, 'light'))
-
-// Derived hex for the color-picker input (uses actual stored S/L, not fixed defaults)
-const accentPickerHex = computed(() => hslToHex(theme.accentHue, theme.accentSat, theme.accentLit))
-const accentDarkHex = computed(() => hslToHex(theme.accentHue, theme.accentSat, theme.accentLit))
-const accentLightHex = computed(() => hslToHex(
-  theme.accentHue,
-  Math.round(theme.accentSat * (70 / 78)),
-  Math.round(theme.accentLit * (42 / 62)),
-))
-
-function onAccentPickerInput(e: Event) {
-  const hex = (e.target as HTMLInputElement).value
-  const [h, s, l] = hexToHsl(hex)
-  theme.setAccentColor(h, s, l)
-}
-
-// ---- UI scale ----
-const uiScalePct = computed(() => Math.round(theme.uiScale * 100))
-function onUiScaleInput(e: Event) {
-  theme.setUiScale(+(e.target as HTMLInputElement).value / 100)
-}
-
-// ---- Furniture group export / import ----
-const copiedGroupId = ref<string | null>(null)
-
-function exportGroup(groupId: string) {
-  const group = fp.furnitureGroups.find(g => g.id === groupId)
-  if (!group) return
-  const items = fp.furniture
-    .filter(f => f.groupId === groupId)
-    .map(({ id: _id, groupId: _gid, ...rest }) => rest)
-  const { id: _id, collapsed: _c, ...groupFields } = group
-  const preset = { ...groupFields, items }
-  navigator.clipboard.writeText(JSON.stringify(preset, null, 2)).then(() => {
-    copiedGroupId.value = groupId
-    setTimeout(() => { copiedGroupId.value = null }, 1500)
-  })
-}
-
-const showImportModal = ref(false)
-const importText = ref('')
-const importError = ref('')
-
-const showLibraryModal = ref(false)
-const librarySearch = ref('')
-
-const filteredLibrary = computed(() => {
-  const q = librarySearch.value.trim().toLowerCase()
-  if (!q) return FURNITURE_LIBRARY
-  return FURNITURE_LIBRARY.filter(p => p.label.toLowerCase().includes(q))
-})
-
-// Load all JSON files from config/furnitureLibrary/ — add new presets by dropping a .json file there
-const _libraryModules = import.meta.glob('~/config/furnitureLibrary/*.json', { eager: true })
-const FURNITURE_LIBRARY = Object.values(_libraryModules) as Array<{
-  label: string; x?: number; y?: number; z?: number; rotY?: number
-  items: import('~/stores/floorplan').FloorplanFurniture[]
-}>
-
-function onInsertFromLibrary(preset: typeof FURNITURE_LIBRARY[number]) {
-  fp.importFurnitureGroup(preset)
-  showLibraryModal.value = false
-}
-
-function onImport() {
-  importError.value = ''
-  try {
-    // Strip a single pair of surrounding quotes that can appear when copying
-    // from a chat message (e.g. "{ ... }" instead of { ... })
-    let text = importText.value.trim()
-    if (text.startsWith('"') && text.endsWith('"')) text = text.slice(1, -1)
-    const preset = JSON.parse(text)
-    if (typeof preset.label !== 'string' || !Array.isArray(preset.items)) {
-      importError.value = 'Invalid format: expected { label, x, y, z, rotY, items[] }'
-      return
+    const jobs: Promise<unknown>[] = []
+    if (fp.dirty) jobs.push(fp.save())
+    if (layout.dirty) jobs.push(layout.save())
+    if (appearanceDirty.value) {
+      theme.saveAccentHue()
+      theme.savePaletteVariants()
+      theme.saveUiScale()
     }
-    fp.importFurnitureGroup(preset)
-    importText.value = ''
-    showImportModal.value = false
-  } catch {
-    importError.value = 'Invalid JSON — check the pasted text'
+    await Promise.all(jobs)
+    toast.success('Changes saved')
+    return true
+  } catch (err) {
+    toast.error(`Couldn’t save — ${(err as Error)?.message ?? 'server unreachable'}`)
+    return false
+  } finally {
+    saving.value = false
   }
+}
+
+async function discardAll() {
+  if (fp.dirty) {
+    await fp.load()
+    fp._history = []
+    fp._future = []
+    fp.selectedOpeningId = null
+    fp.deselect()
+  }
+  if (layout.dirty) await layout.load()
+  if (appearanceDirty.value) {
+    theme.setAccentColor(theme.accentHueSaved, theme.accentSatSaved, theme.accentLitSaved)
+    theme.setDarkVariant(theme.darkVariantSaved)
+    theme.setLightVariant(theme.lightVariantSaved)
+    theme.setUiScale(theme.uiScaleSaved)
+  }
+  discardArmed.value = false
+  toast.show('Changes discarded', 'info', 'mdi:undo-variant')
+}
+
+// Discard needs a second tap, like the delete buttons.
+const discardArmed = ref(false)
+let discardTimer: ReturnType<typeof setTimeout> | null = null
+function onDiscard() {
+  if (discardArmed.value) { void discardAll(); return }
+  discardArmed.value = true
+  if (discardTimer) clearTimeout(discardTimer)
+  discardTimer = setTimeout(() => { discardArmed.value = false }, 3000)
+}
+
+// ── Closing ──
+const confirmClose = ref(false)
+function requestClose() {
+  if (anyDirty.value) confirmClose.value = true
+  else fp.toggleEditMode()
+}
+async function saveAndClose() {
+  if (await saveAll()) {
+    confirmClose.value = false
+    fp.toggleEditMode()
+  }
+}
+async function discardAndClose() {
+  await discardAll()
+  confirmClose.value = false
+  fp.toggleEditMode()
 }
 </script>
 
@@ -391,1285 +129,103 @@ function onImport() {
   >
     <div
       v-if="fp.editMode"
-      class="absolute top-0 right-0 h-full w-80 bg-bg-panel border-l border-bg-elevated flex flex-col z-20 pointer-events-auto"
+      class="absolute top-0 right-0 h-full w-96 max-w-full bg-bg-panel text-fg border-l border-fg/10 shadow-2xl flex flex-col z-20 pointer-events-auto"
     >
       <!-- Header -->
-      <div class="flex items-center justify-between px-4 py-3 border-b border-bg-elevated shrink-0">
-        <div class="flex items-center gap-2">
-          <span class="text-sm font-semibold text-fg">Properties</span>
-          <span
-            v-if="isDirty"
-            class="text-xs px-1.5 py-0.5 bg-yellow-500/20 text-yellow-300 rounded"
-          >unsaved</span>
-        </div>
-        <div class="flex items-center gap-1">
+      <div class="flex items-center gap-1 pl-4 pr-1.5 h-14 shrink-0">
+        <h2 class="text-base font-semibold">Settings</h2>
+        <span v-if="anyDirty" class="ml-2 text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-600 dark:text-yellow-300">Unsaved</span>
+        <div class="flex-1" />
+        <template v-if="showHistory">
           <button
-            class="btn-touch !min-w-0 !px-2 text-fg-muted disabled:opacity-30"
+            class="w-10 h-10 flex items-center justify-center rounded-full text-fg-muted active:bg-bg-elevated disabled:opacity-30"
             :disabled="!fp.canUndo"
             title="Undo (Ctrl+Z)"
+            aria-label="Undo"
             @click="fp.undo()"
-          >↩</button>
+          ><Icon icon="mdi:undo" width="20" height="20" /></button>
           <button
-            class="btn-touch !min-w-0 !px-2 text-fg-muted disabled:opacity-30"
+            class="w-10 h-10 flex items-center justify-center rounded-full text-fg-muted active:bg-bg-elevated disabled:opacity-30"
             :disabled="!fp.canRedo"
             title="Redo (Ctrl+Y)"
+            aria-label="Redo"
             @click="fp.redo()"
-          >↪</button>
-          <button class="btn-touch !min-w-0 !px-3 text-fg-muted" @click="fp.toggleEditMode()">✕</button>
-        </div>
-      </div>
-
-      <!-- Hint -->
-      <div class="px-4 py-2 text-[10px] text-fg-muted border-b border-bg-elevated shrink-0 leading-relaxed">
-        Use the <span class="text-accent">canvas on the left</span> to draw rooms, drag vertices, and place door/window openings.
+          ><Icon icon="mdi:redo" width="20" height="20" /></button>
+          <div class="w-px h-5 bg-fg/10 mx-1" />
+        </template>
+        <button
+          class="w-11 h-11 flex items-center justify-center rounded-full text-fg-muted active:bg-bg-elevated"
+          aria-label="Close settings"
+          @click="requestClose"
+        ><Icon icon="mdi:close" width="22" height="22" /></button>
       </div>
 
       <!-- Tabs -->
-      <div class="flex border-b border-bg-elevated shrink-0">
+      <nav class="grid grid-cols-5 border-b border-fg/10 shrink-0 px-1" role="tablist">
         <button
-          v-for="t in (['rooms', 'furniture', 'devices'] as const)"
-          :key="t"
-          class="flex-1 py-2.5 text-xs capitalize transition-colors"
-          :class="tab === t ? 'text-accent border-b-2 border-accent' : 'text-fg-muted'"
-          @click="tab = t; fp.deselect(); selectedDeviceId = null"
-        >{{ t }}</button>
-        <button
-          class="flex-1 py-2.5 text-xs capitalize transition-colors"
-          :class="tab === 'preferences' ? 'text-accent border-b-2 border-accent' : 'text-fg-muted'"
-          @click="tab = 'preferences'; fp.deselect(); selectedDeviceId = null"
-        >Prefs</button>
-      </div>
-
-      <!-- Scrollable list + forms -->
-      <div class="flex-1 overflow-y-auto p-2 flex flex-col gap-1">
-
-        <!-- OPENING PROPERTIES (shown on top when an opening is selected) -->
-        <template v-if="fp.selectedOpeningId">
-          <div class="rounded-lg bg-bg-elevated border border-orange-400/30 p-3 flex flex-col gap-2">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <span
-                  class="w-2 h-2 rounded-full shrink-0"
-                  :class="fp.openings.find(o => o.id === fp.selectedOpeningId)?.type === 'door' ? 'bg-orange-400' : 'bg-sky-400'"
-                />
-                <span class="text-xs font-medium text-fg capitalize">
-                  {{ fp.openings.find(o => o.id === fp.selectedOpeningId)?.type }} Properties
-                </span>
-              </div>
-              <div class="flex items-center gap-1">
-                <button
-                  class="text-xs text-red-400 px-2 py-0.5 rounded hover:bg-red-500/20"
-                  @click="fp.deleteOpening(fp.selectedOpeningId!); fp.selectedOpeningId = null"
-                >Del</button>
-                <button class="text-fg-muted text-xs px-2 py-0.5 rounded hover:bg-bg" @click="fp.selectedOpeningId = null">✕</button>
-              </div>
-            </div>
-            <template v-if="fp.openings.find(o => o.id === fp.selectedOpeningId) as any">
-              <div class="grid grid-cols-2 gap-2">
-                <label class="flex flex-col gap-1">
-                  <span class="text-[10px] text-fg-muted uppercase tracking-wide">Width (m)</span>
-                  <input type="number" step="0.05" min="0.3"
-                    class="bg-bg text-fg text-xs rounded px-2 py-1.5 border border-bg-elevated w-full"
-                    :value="fp.openings.find(o => o.id === fp.selectedOpeningId)!.width"
-                    @change="fp.updateOpening(fp.selectedOpeningId!, { width: numVal($event) })"
-                  />
-                </label>
-                <label class="flex flex-col gap-1">
-                  <span class="text-[10px] text-fg-muted uppercase tracking-wide">Height (m)</span>
-                  <input type="number" step="0.05" min="0.1"
-                    class="bg-bg text-fg text-xs rounded px-2 py-1.5 border border-bg-elevated w-full"
-                    :value="fp.openings.find(o => o.id === fp.selectedOpeningId)!.height ?? (fp.openings.find(o => o.id === fp.selectedOpeningId)!.type === 'door' ? 1.2 : 0.52)"
-                    @change="fp.updateOpening(fp.selectedOpeningId!, { height: numVal($event) })"
-                  />
-                </label>
-                <label v-if="fp.openings.find(o => o.id === fp.selectedOpeningId)?.type === 'window'" class="flex flex-col gap-1 col-span-2">
-                  <span class="text-[10px] text-fg-muted uppercase tracking-wide">Sill height (m)</span>
-                  <input type="number" step="0.05" min="0"
-                    class="bg-bg text-fg text-xs rounded px-2 py-1.5 border border-bg-elevated w-full"
-                    :value="fp.openings.find(o => o.id === fp.selectedOpeningId)!.sill ?? 0.34"
-                    @change="fp.updateOpening(fp.selectedOpeningId!, { sill: numVal($event) })"
-                  />
-                </label>
-              </div>
-            </template>
-          </div>
-          <div class="h-px bg-bg-elevated my-1 shrink-0" />
-        </template>
-
-        <!-- ROOMS -->
-        <template v-if="tab === 'rooms'">
-          <div
-            v-for="room in fp.rooms"
-            :key="room.id"
-            class="rounded-lg px-3 py-2 cursor-pointer transition-colors"
-            :class="fp.selection?.id === room.id ? 'bg-accent/15 border border-accent/50' : 'bg-bg-elevated'"
-            @click="selectItem('room', room.id)"
-          >
-            <div class="flex items-center justify-between">
-              <span class="text-sm text-fg truncate mr-2">{{ room.name }}</span>
-              <button
-                class="text-xs text-red-400 px-2 py-1 rounded shrink-0 hover:bg-red-500/20"
-                @click.stop="fp.deleteRoom(room.id)"
-              >Del</button>
-            </div>
-
-            <div v-if="fp.selection?.id === room.id" class="mt-3 flex flex-col gap-3" @click.stop>
-              <label class="flex flex-col gap-1">
-                <span class="text-[10px] text-fg-muted uppercase tracking-wide">Name</span>
-                <input
-                  class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-full"
-                  :value="room.name"
-                  @change="fp.updateRoom(room.id, { name: ($event.target as HTMLInputElement).value })"
-                />
-              </label>
-              <div class="grid grid-cols-2 gap-2">
-                <label class="flex flex-col gap-1">
-                  <span class="text-[10px] text-fg-muted uppercase tracking-wide">Hue shift °</span>
-                  <input type="number" step="5"
-                    class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-full"
-                    :value="room.tintH"
-                    @change="fp.updateRoom(room.id, { tintH: numVal($event) })"
-                  />
-                </label>
-                <label class="flex flex-col gap-1">
-                  <span class="text-[10px] text-fg-muted uppercase tracking-wide">Brightness</span>
-                  <input type="number" step="0.05" min="0.5" max="1.5"
-                    class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-full"
-                    :value="room.tintV"
-                    @change="fp.updateRoom(room.id, { tintV: numVal($event) })"
-                  />
-                </label>
-                <label class="flex flex-col gap-1">
-                  <span class="text-[10px] text-fg-muted uppercase tracking-wide">Wall height (m)</span>
-                  <input type="number" step="0.05" min="0.5" max="6"
-                    class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-full"
-                    :value="room.wallH ?? 1.2"
-                    @change="fp.updateRoom(room.id, { wallH: numVal($event) })"
-                  />
-                </label>
-                <label class="flex flex-col gap-1">
-                  <span class="text-[10px] text-fg-muted uppercase tracking-wide">Default wall thickness (m)</span>
-                  <input type="number" step="0.01" min="0.05" max="1"
-                    class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-full"
-                    :value="room.wallThickness ?? 0.15"
-                    @change="fp.updateRoom(room.id, { wallThickness: numVal($event) })"
-                  />
-                </label>
-                <label class="flex flex-col gap-1 col-span-2">
-                  <span class="text-[10px] text-fg-muted uppercase tracking-wide">Floor color</span>
-                  <div class="flex items-center gap-2">
-                    <input
-                      type="color"
-                      class="h-8 w-10 rounded cursor-pointer border border-bg-elevated bg-bg p-0.5 shrink-0"
-                      :value="room.color ?? '#808080'"
-                      @input="fp.updateRoom(room.id, { color: ($event.target as HTMLInputElement).value })"
-                    />
-                    <input
-                      class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-full font-mono"
-                      :value="room.color ?? ''"
-                      placeholder="auto (theme)"
-                      maxlength="7"
-                      @change="fp.updateRoom(room.id, { color: ($event.target as HTMLInputElement).value.trim() || undefined })"
-                    />
-                    <button
-                      v-if="room.color"
-                      class="text-xs text-fg-muted hover:text-fg shrink-0 px-1"
-                      title="Reset to theme color"
-                      @click.stop="fp.updateRoom(room.id, { color: undefined })"
-                    >✕</button>
-                  </div>
-                </label>
-              </div>
-              <!-- Per-wall thickness overrides -->
-              <div v-if="room.vertices.length >= 3">
-                <div class="flex items-center justify-between">
-                  <span class="text-[10px] text-fg-muted uppercase tracking-wide">Per-wall thickness (m)</span>
-                  <button
-                    v-if="room.wallThicknesses && Object.keys(room.wallThicknesses).length"
-                    class="text-[10px] text-fg-muted hover:text-fg px-1"
-                    title="Reset all walls to the room default"
-                    @click.stop="fp.updateRoom(room.id, { wallThicknesses: undefined })"
-                  >reset all</button>
-                </div>
-                <div class="mt-1 grid grid-cols-2 gap-1.5">
-                  <label
-                    v-for="(_v, i) in room.vertices"
-                    :key="'wt-' + room.id + '-' + i"
-                    class="flex items-center gap-1.5 rounded bg-bg px-2 py-1"
-                    :title="'Edge ' + i + ' · ' + edgeLength(room, i).toFixed(2) + 'm long'"
-                    @mouseenter="fp.highlightedWall = { roomId: room.id, edgeIdx: i }"
-                    @mouseleave="fp.highlightedWall = null"
-                  >
-                    <span class="text-[10px] text-fg-muted shrink-0 w-9">Wall {{ i }}</span>
-                    <input type="number" step="0.01" min="0.05" max="1"
-                      class="bg-bg-elevated text-fg text-xs rounded px-1.5 py-1 border border-bg w-full"
-                      :class="room.wallThicknesses?.[i] !== undefined ? 'border-accent/50 text-accent' : ''"
-                      :placeholder="String(room.wallThickness ?? 0.15)"
-                      :value="room.wallThicknesses?.[i] ?? ''"
-                      @focus="fp.highlightedWall = { roomId: room.id, edgeIdx: i }"
-                      @blur="fp.highlightedWall = null"
-                      @change="fp.setWallThickness(room.id, i, ($event.target as HTMLInputElement).value === '' ? undefined : numVal($event))"
-                    />
-                  </label>
-                </div>
-              </div>
-              <!-- Hide walls in 3D (shown as a 2D ghost) -->
-              <div v-if="room.vertices.length >= 3">
-                <div class="flex items-center justify-between">
-                  <span class="text-[10px] text-fg-muted uppercase tracking-wide">Hide walls in 3D</span>
-                  <button
-                    v-if="room.hiddenWalls && room.hiddenWalls.length"
-                    class="text-[10px] text-fg-muted hover:text-fg px-1"
-                    title="Show all walls in 3D again"
-                    @click.stop="fp.updateRoom(room.id, { hiddenWalls: undefined })"
-                  >show all</button>
-                </div>
-                <div class="mt-1 grid grid-cols-2 gap-1.5">
-                  <label
-                    v-for="(_v, i) in room.vertices"
-                    :key="'hw-' + room.id + '-' + i"
-                    class="flex items-center gap-1.5 rounded bg-bg px-2 py-1 cursor-pointer"
-                    :class="room.hiddenWalls?.includes(i) ? 'text-accent' : 'text-fg-muted'"
-                    :title="'Edge ' + i + ' · ' + edgeLength(room, i).toFixed(2) + 'm long'"
-                    @mouseenter="fp.highlightedWall = { roomId: room.id, edgeIdx: i }"
-                    @mouseleave="fp.highlightedWall = null"
-                  >
-                    <input type="checkbox" class="accent-accent shrink-0"
-                      :checked="room.hiddenWalls?.includes(i) ?? false"
-                      @change="fp.setWallHidden(room.id, i, ($event.target as HTMLInputElement).checked)"
-                    />
-                    <span class="text-[10px]">Wall {{ i }}</span>
-                  </label>
-                </div>
-              </div>
-              <!-- Openings list for this room -->
-              <div v-if="fp.openings.filter(o => o.roomId === room.id).length > 0">
-                <span class="text-[10px] text-fg-muted uppercase tracking-wide">Openings</span>
-                <div class="mt-1 flex flex-col gap-1">
-                  <div
-                    v-for="op in fp.openings.filter(o => o.roomId === room.id)"
-                    :key="op.id"
-                    class="rounded bg-bg overflow-hidden"
-                  >
-                    <!-- Header row -->
-                    <div
-                      class="flex items-center gap-2 text-xs text-fg-muted px-2 py-1 cursor-pointer hover:bg-bg-elevated"
-                      @click.stop="toggleOpening(op.id)"
-                    >
-                      <span
-                        class="w-2 h-2 rounded-full shrink-0"
-                        :class="op.type === 'door' ? 'bg-orange-400' : 'bg-sky-400'"
-                      />
-                      <span class="capitalize flex-1">{{ op.type }} · edge {{ op.edgeIdx }} · {{ op.width }}m</span>
-                      <span class="text-fg-muted/50 text-[10px]">{{ selectedOpeningId === op.id ? '▲' : '▼' }}</span>
-                      <button class="text-red-400 hover:text-red-300 ml-1" @click.stop="fp.deleteOpening(op.id)">✕</button>
-                    </div>
-                    <!-- Expanded fields -->
-                    <div v-if="selectedOpeningId === op.id" class="px-2 pb-2 grid grid-cols-2 gap-2" @click.stop>
-                      <label class="flex flex-col gap-1">
-                        <span class="text-[10px] text-fg-muted uppercase tracking-wide">Width (m)</span>
-                        <input type="number" step="0.05" min="0.3"
-                          class="bg-bg-elevated text-fg text-xs rounded px-2 py-1 border border-bg w-full"
-                          :value="op.width"
-                          @change="fp.updateOpening(op.id, { width: numVal($event) })"
-                        />
-                      </label>
-                      <label class="flex flex-col gap-1">
-                        <span class="text-[10px] text-fg-muted uppercase tracking-wide">Height (m)</span>
-                        <input type="number" step="0.05" min="0.1"
-                          class="bg-bg-elevated text-fg text-xs rounded px-2 py-1 border border-bg w-full"
-                          :value="op.height ?? (op.type === 'door' ? 1.2 : 0.52)"
-                          @change="fp.updateOpening(op.id, { height: numVal($event) })"
-                        />
-                      </label>
-                      <label v-if="op.type === 'window'" class="flex flex-col gap-1 col-span-2">
-                        <span class="text-[10px] text-fg-muted uppercase tracking-wide">Sill height (m)</span>
-                        <input type="number" step="0.05" min="0"
-                          class="bg-bg-elevated text-fg text-xs rounded px-2 py-1 border border-bg w-full"
-                          :value="op.sill ?? 0.34"
-                          @change="fp.updateOpening(op.id, { sill: numVal($event) })"
-                        />
-                      </label>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </template>
-
-        <!-- FURNITURE -->
-        <template v-if="tab === 'furniture'">
-
-          <!-- Groups -->
-          <div
-            v-for="group in fp.furnitureGroups"
-            :key="group.id"
-            class="shrink-0 rounded-lg border border-bg-elevated overflow-hidden"
-          >
-            <!-- Group header -->
-            <div
-              class="flex items-center gap-2 px-3 py-2 bg-bg-elevated cursor-pointer select-none"
-              @click="toggleGroup(group.id)"
-            >
-              <span class="text-fg-muted text-xs shrink-0">{{ expandedGroupIds.has(group.id) ? '▼' : '▶' }}</span>
-              <input
-                class="bg-transparent text-sm font-medium text-fg flex-1 min-w-0 outline-none focus:text-accent"
-                :value="group.label"
-                @click.stop
-                @change="fp.updateFurnitureGroup(group.id, { label: ($event.target as HTMLInputElement).value })"
-              />
-              <button
-                class="text-xs text-accent border border-accent/40 rounded px-2 py-0.5 shrink-0 hover:bg-accent/10"
-                title="Add item to group"
-                @click.stop="fp.addFurniture(group.id)"
-              >+</button>
-              <button
-                v-if="expandedGroupIds.has(group.id)"
-                class="shrink-0 p-1 rounded transition-colors"
-                :class="copiedGroupId === group.id ? 'text-green-400' : 'text-fg-muted hover:text-accent'"
-                :title="copiedGroupId === group.id ? 'Copied!' : 'Export group to clipboard'"
-                @click.stop="exportGroup(group.id)"
-              >
-                <Icon :icon="copiedGroupId === group.id ? 'mdi:check' : 'mdi:export-variant'" class="text-sm" />
-              </button>
-              <button
-                class="text-xs text-red-400 px-1.5 py-0.5 rounded shrink-0 hover:bg-red-500/20"
-                title="Delete group (ungroups items)"
-                @click.stop="fp.deleteFurnitureGroup(group.id)"
-              >Del</button>
-            </div>
-
-            <!-- Group children -->
-            <div v-if="expandedGroupIds.has(group.id)" class="flex flex-col gap-px bg-bg">
-              <!-- Group position controls -->
-              <div class="px-3 py-2 bg-bg border-b border-bg-elevated" @click.stop>
-                <span class="text-[10px] text-fg-muted uppercase tracking-wide block mb-1.5">Group position</span>
-                <div class="grid grid-cols-3 gap-1.5">
-                  <label class="flex flex-col gap-0.5">
-                    <span class="text-[9px] text-fg-muted uppercase">X</span>
-                    <input type="number" step="0.25"
-                      class="bg-bg-elevated text-fg text-xs rounded px-1.5 py-1 border border-bg w-full"
-                      :value="group.x ?? 0"
-                      @change="fp.updateFurnitureGroup(group.id, { x: numVal($event) })"
-                    />
-                  </label>
-                  <label class="flex flex-col gap-0.5">
-                    <span class="text-[9px] text-fg-muted uppercase">Y</span>
-                    <input type="number" step="0.05"
-                      class="bg-bg-elevated text-fg text-xs rounded px-1.5 py-1 border border-bg w-full"
-                      :value="group.y ?? 0"
-                      @change="fp.updateFurnitureGroup(group.id, { y: numVal($event) })"
-                    />
-                  </label>
-                  <label class="flex flex-col gap-0.5">
-                    <span class="text-[9px] text-fg-muted uppercase">Z</span>
-                    <input type="number" step="0.25"
-                      class="bg-bg-elevated text-fg text-xs rounded px-1.5 py-1 border border-bg w-full"
-                      :value="group.z ?? 0"
-                      @change="fp.updateFurnitureGroup(group.id, { z: numVal($event) })"
-                    />
-                  </label>
-                </div>
-                <span class="text-[10px] text-fg-muted uppercase tracking-wide block mt-2 mb-1.5">Group rotation</span>
-                <div class="grid grid-cols-3 gap-1.5">
-                  <label class="flex flex-col gap-0.5">
-                    <span class="text-[9px] text-fg-muted uppercase">Rot X°</span>
-                    <input type="number" step="5"
-                      class="bg-bg-elevated text-fg text-xs rounded px-1.5 py-1 border border-bg w-full"
-                      :value="group.rotX ?? 0"
-                      @change="fp.updateFurnitureGroup(group.id, { rotX: numVal($event) })"
-                    />
-                  </label>
-                  <label class="flex flex-col gap-0.5">
-                    <span class="text-[9px] text-fg-muted uppercase">Rot Y°</span>
-                    <input type="number" step="5"
-                      class="bg-bg-elevated text-fg text-xs rounded px-1.5 py-1 border border-bg w-full"
-                      :value="group.rotY ?? 0"
-                      @change="fp.updateFurnitureGroup(group.id, { rotY: numVal($event) })"
-                    />
-                  </label>
-                  <label class="flex flex-col gap-0.5">
-                    <span class="text-[9px] text-fg-muted uppercase">Rot Z°</span>
-                    <input type="number" step="5"
-                      class="bg-bg-elevated text-fg text-xs rounded px-1.5 py-1 border border-bg w-full"
-                      :value="group.rotZ ?? 0"
-                      @change="fp.updateFurnitureGroup(group.id, { rotZ: numVal($event) })"
-                    />
-                  </label>
-                </div>
-                <!-- Follow theme colors toggle -->
-                <label class="mt-2 flex items-center gap-2 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    class="accent-accent w-3.5 h-3.5 rounded"
-                    :checked="group.followTheme ?? false"
-                    @change="fp.updateFurnitureGroup(group.id, { followTheme: ($event.target as HTMLInputElement).checked })"
-                    @click.stop
-                  />
-                  <span class="text-xs text-fg-muted">Follow theme colors</span>
-                </label>
-                <!-- Open isolated 3D editor for this group -->
-                <button
-                  class="mt-1 w-full py-1.5 rounded-lg border border-bg text-xs text-fg-muted hover:text-accent hover:border-accent/50 transition-colors flex items-center justify-center gap-1.5 bg-bg-elevated"
-                  @click.stop="viewerGroupId = group.id"
-                >
-                  <span>⬡</span> Edit in 3D
-                </button>
-              </div>
-              <!-- Items list -->
-              <div>
-                <div
-                  v-for="item in fp.furniture.filter(f => f.groupId === group.id)"
-                  :key="item.id"
-                  class="px-3 py-2 cursor-pointer transition-colors border-l-2"
-                  :class="fp.selection?.id === item.id ? 'bg-accent/10 border-accent' : 'bg-bg-elevated/60 border-transparent hover:border-accent/30'"
-                  @click="selectItem('furniture', item.id)"
-                >
-                  <div class="flex items-center justify-between">
-                    <span class="text-sm text-fg truncate mr-2">{{ item.label }}</span>
-                    <button
-                      class="text-xs text-red-400 px-2 py-1 rounded shrink-0 hover:bg-red-500/20"
-                      @click.stop="fp.deleteFurniture(item.id)"
-                    >Del</button>
-                  </div>
-                  <FurnitureItemForm v-if="fp.selection?.id === item.id" :item="item" />
-                </div>
-                <div v-if="fp.furniture.filter(f => f.groupId === group.id).length === 0" class="px-3 py-2 text-xs text-fg-muted italic">
-                  Empty group — click + to add items
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Ungrouped items -->
-          <div
-            v-for="item in fp.furniture.filter(f => !f.groupId)"
-            :key="item.id"
-            class="shrink-0 rounded-lg px-3 py-2 cursor-pointer transition-colors"
-            :class="fp.selection?.id === item.id ? 'bg-accent/15 border border-accent/50' : 'bg-bg-elevated'"
-            @click="selectItem('furniture', item.id)"
-          >
-            <div class="flex items-center justify-between">
-              <span class="text-sm text-fg truncate mr-2">{{ item.label }}</span>
-              <button
-                class="text-xs text-red-400 px-2 py-1 rounded shrink-0 hover:bg-red-500/20"
-                @click.stop="fp.deleteFurniture(item.id)"
-              >Del</button>
-            </div>
-
-            <FurnitureItemForm v-if="fp.selection?.id === item.id" :item="item" />
-          </div>
-
-          <!-- Action buttons -->
-          <div class="shrink-0 flex flex-col gap-2 mt-1">
-            <div class="flex gap-2">
-              <button
-                class="btn-touch text-xs text-accent border border-accent/40 rounded-lg flex-1"
-                @click="fp.addFurnitureGroup()"
-              >+ Add Group</button>
-              <button
-                class="btn-touch text-xs text-accent border border-accent/40 rounded-lg flex-1"
-                @click="fp.addFurniture()"
-              >+ Add Item</button>
-            </div>
-            <div class="flex gap-2">
-              <button
-                class="btn-touch text-xs text-fg-muted border border-bg-elevated rounded-lg flex-1 flex items-center justify-center gap-1"
-                title="Browse built-in furniture presets"
-                @click="showLibraryModal = true"
-              ><Icon icon="mdi:bookshelf" class="text-sm" /> Library</button>
-              <button
-                class="btn-touch text-xs text-fg-muted border border-bg-elevated rounded-lg flex-1 flex items-center justify-center gap-1"
-                title="Import a previously exported group preset"
-                @click="showImportModal = true"
-              ><Icon icon="mdi:import" class="text-sm" /> Import</button>
-            </div>
-          </div>
-
-          <!-- Library modal -->
-          <Teleport to="body">
-            <div
-              v-if="showLibraryModal"
-              class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6"
-              @click.self="showLibraryModal = false"
-            >
-              <div class="bg-bg-panel border border-bg-elevated rounded-xl shadow-xl w-full max-w-4xl flex flex-col gap-0 max-h-[90vh]" style="height:min(90vh,700px)">
-                <!-- Header -->
-                <div class="flex items-center justify-between px-5 pt-5 pb-3 shrink-0">
-                  <span class="text-sm font-semibold text-fg">Furniture Library</span>
-                  <button class="text-fg-muted hover:text-fg text-base px-1" @click="showLibraryModal = false; librarySearch = ''">✕</button>
-                </div>
-                <!-- Search -->
-                <div class="px-5 pb-3 shrink-0">
-                  <div class="relative">
-                    <Icon icon="mdi:magnify" class="absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted text-sm pointer-events-none" />
-                    <input
-                      v-model="librarySearch"
-                      type="text"
-                      placeholder="Search presets…"
-                      class="w-full bg-bg text-fg text-xs rounded-lg pl-8 pr-3 py-2 border border-bg-elevated outline-none focus:border-accent/60 placeholder:text-fg-muted"
-                    />
-                  </div>
-                </div>
-                <!-- Grid -->
-                <div class="flex-1 overflow-y-auto px-5 pb-5">
-                  <div v-if="filteredLibrary.length" class="grid grid-cols-3 gap-4">
-                    <button
-                      v-for="preset in filteredLibrary"
-                      :key="preset.label"
-                      class="btn-touch flex flex-col gap-2 p-2 rounded-xl border border-bg-elevated hover:border-accent/50 hover:bg-bg-elevated transition-colors text-left"
-                      @click="onInsertFromLibrary(preset)"
-                    >
-                      <LibraryItemPreview :preset="preset" />
-                      <div class="flex items-center justify-between px-1">
-                        <span class="text-xs text-fg font-medium">{{ preset.label }}</span>
-                        <span class="text-[10px] text-fg-muted">{{ preset.items.length }} parts</span>
-                      </div>
-                    </button>
-                  </div>
-                  <p v-else class="text-xs text-fg-muted text-center py-10">No presets match "{{ librarySearch }}"</p>
-                </div>
-              </div>
-            </div>
-          </Teleport>
-
-          <!-- Import modal -->
-          <Teleport to="body">
-            <div
-              v-if="showImportModal"
-              class="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-              @click.self="showImportModal = false"
-            >
-              <div class="bg-bg-panel border border-bg-elevated rounded-xl shadow-xl w-96 p-5 flex flex-col gap-3">
-                <div class="flex items-center justify-between">
-                  <span class="text-sm font-semibold text-fg">Import Furniture Group</span>
-                  <button class="text-fg-muted hover:text-fg text-base px-1" @click="showImportModal = false">✕</button>
-                </div>
-                <p class="text-[11px] text-fg-muted leading-relaxed">Paste an exported group JSON below. A new group will be created with fresh IDs.</p>
-                <textarea
-                  v-model="importText"
-                  rows="10"
-                  placeholder='{ "label": "My Group", "x": 0, "y": 0, "z": 0, "rotY": 0, "items": [...] }'
-                  class="bg-bg text-fg text-xs font-mono rounded-lg px-3 py-2 border border-bg-elevated w-full resize-y outline-none focus:border-accent"
-                  @click.stop
-                />
-                <p v-if="importError" class="text-xs text-red-400">{{ importError }}</p>
-                <div class="flex gap-2">
-                  <button
-                    class="btn-touch text-xs text-accent border border-accent/40 rounded-lg flex-1"
-                    @click="onImport"
-                  >Import</button>
-                  <button
-                    class="btn-touch text-xs text-fg-muted border border-bg-elevated rounded-lg flex-1"
-                    @click="showImportModal = false; importText = ''; importError = ''"
-                  >Cancel</button>
-                </div>
-              </div>
-            </div>
-          </Teleport>
-        </template>
-
-        <!-- DEVICES -->
-        <template v-if="tab === 'devices'">
-          <!-- datalist for icon autocomplete -->
-          <datalist id="device-icon-list">
-            <option value="mdi:lightbulb" />
-            <option value="mdi:ceiling-light" />
-            <option value="mdi:floor-lamp" />
-            <option value="mdi:led-strip-variant" />
-            <option value="mdi:thermostat" />
-            <option value="mdi:thermometer" />
-            <option value="mdi:air-conditioner" />
-            <option value="mdi:fan" />
-            <option value="mdi:toggle-switch" />
-            <option value="mdi:power-plug" />
-            <option value="mdi:power-socket-eu" />
-            <option value="mdi:lock" />
-            <option value="mdi:lock-open" />
-            <option value="mdi:camera" />
-            <option value="mdi:motion-sensor" />
-            <option value="mdi:doorbell" />
-            <option value="mdi:door" />
-            <option value="mdi:window-open" />
-            <option value="mdi:smoke-detector" />
-            <option value="mdi:blinds" />
-            <option value="mdi:curtains" />
-            <option value="mdi:garage" />
-            <option value="mdi:television" />
-            <option value="mdi:speaker" />
-            <option value="mdi:remote" />
-            <option value="mdi:water-percent" />
-            <option value="mdi:molecule-co2" />
-            <option value="mdi:weather-partly-cloudy" />
-            <option value="mdi:flash" />
-            <option value="mdi:robot-vacuum" />
-            <option value="mdi:water-pump" />
-            <option value="mdi:radiator" />
-          </datalist>
-
-          <!-- Placed devices: search bar -->
-          <div class="relative mb-1">
-            <Icon icon="mdi:magnify" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-muted pointer-events-none" width="14" height="14" />
-            <input
-              v-model="deviceSearch"
-              type="search"
-              placeholder="Filter placed devices…"
-              class="bg-bg text-fg text-xs rounded-lg pl-7 pr-3 py-1.5 border border-bg-elevated w-full placeholder:text-fg-muted/60 focus:border-accent/60 focus:outline-none transition-colors"
-            />
-          </div>
-
-          <!-- Empty state when search yields nothing -->
-          <p v-if="filteredPlacements.length === 0 && layout.placements.length > 0" class="text-[11px] text-fg-muted text-center py-3">
-            No matches for "{{ deviceSearch }}"
-          </p>
-
-          <!-- Placed devices list -->
-          <div
-            v-for="p in filteredPlacements"
-            :key="p.entity_id"
-            class="rounded-lg px-3 py-2 cursor-pointer transition-colors"
-            :class="selectedDeviceId === p.entity_id ? 'bg-accent/15 border border-accent/50' : 'bg-bg-elevated hover:bg-bg-elevated/80'"
-            @click="selectedDeviceId = selectedDeviceId === p.entity_id ? null : p.entity_id"
-          >
-            <div class="flex items-center justify-between gap-2">
-              <div class="flex items-center gap-2 min-w-0">
-                <Icon :icon="p.icon || getAutoIcon(p.entity_id)" class="text-base shrink-0 text-fg-muted" />
-                <div class="min-w-0 flex-1">
-                  <div class="flex items-center gap-1.5 flex-wrap">
-                    <span class="text-sm text-fg truncate">{{ entityLabel(p.entity_id) }}</span>
-                    <span class="text-[9px] px-1.5 py-0.5 rounded-full bg-bg border border-bg-elevated text-fg-muted font-mono shrink-0">{{ entityDomain(p.entity_id) }}</span>
-                    <span
-                      v-if="isOrphan(p.entity_id)"
-                      class="text-[9px] px-1.5 py-0.5 rounded-full bg-yellow-500/20 border border-yellow-500/30 text-yellow-300 shrink-0"
-                      title="Entity not found in current data source"
-                    >orphaned</span>
-                  </div>
-                  <div class="flex items-center gap-1.5 mt-0.5">
-                    <span class="text-[10px] text-fg-muted font-mono truncate">{{ p.entity_id }}</span>
-                    <span
-                      v-if="entityState(p.entity_id)"
-                      class="text-[9px] px-1.5 py-0 rounded-full shrink-0 font-medium"
-                      :class="['on','open','playing','unlocked','true'].includes(entityState(p.entity_id))
-                        ? 'bg-accent/20 text-accent'
-                        : 'bg-bg border border-bg-elevated text-fg-muted'"
-                    >{{ entityState(p.entity_id) }}</span>
-                  </div>
-                </div>
-              </div>
-              <button
-                class="text-xs text-red-400 px-2 py-1 rounded shrink-0 hover:bg-red-500/20"
-                @click.stop="layout.deletePlacement(p.entity_id); selectedDeviceId = null"
-              >Del</button>
-            </div>
-
-            <div v-if="selectedDeviceId === p.entity_id" class="mt-3 flex flex-col gap-2" @click.stop>
-              <!-- Entity ID (read-only) -->
-              <div class="flex flex-col gap-1">
-                <span class="text-[10px] text-fg-muted uppercase tracking-wide">Entity ID</span>
-                <span class="text-xs text-fg font-mono bg-bg rounded px-2 py-1.5 truncate">{{ p.entity_id }}</span>
-              </div>
-
-              <!-- Icon selector -->
-              <label class="flex flex-col gap-1">
-                <span class="text-[10px] text-fg-muted uppercase tracking-wide">Icon</span>
-                <div class="flex items-center gap-2">
-                  <Icon :icon="p.icon || getAutoIcon(p.entity_id)" class="text-xl shrink-0 text-fg" />
-                  <input
-                    list="device-icon-list"
-                    class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated flex-1 min-w-0"
-                    :value="p.icon ?? ''"
-                    placeholder="mdi:lightbulb (auto)"
-                    @change="layout.updatePlacement(p.entity_id, { icon: ($event.target as HTMLInputElement).value.trim() || undefined })"
-                  />
-                  <button
-                    v-if="p.icon"
-                    class="text-xs text-fg-muted hover:text-fg shrink-0 px-1"
-                    title="Reset to auto"
-                    @click.stop="layout.updatePlacement(p.entity_id, { icon: undefined })"
-                  >✕</button>
-                </div>
-              </label>
-
-              <!-- Marker colour (non-lights only; lights auto-set their own colour) -->
-              <label v-if="!p.entity_id.startsWith('light.')" class="flex flex-col gap-1">
-                <span class="text-[10px] text-fg-muted uppercase tracking-wide">Marker colour</span>
-                <div class="flex items-center gap-2">
-                  <input
-                    type="color"
-                    class="h-8 w-10 rounded cursor-pointer border border-bg-elevated bg-bg p-0.5 shrink-0"
-                    :value="p.color ?? '#888888'"
-                    @input="layout.updatePlacement(p.entity_id, { color: ($event.target as HTMLInputElement).value })"
-                  />
-                  <button
-                    v-if="p.color"
-                    class="text-xs text-fg-muted hover:text-fg shrink-0 px-1"
-                    title="Reset to auto"
-                    @click.stop="layout.updatePlacement(p.entity_id, { color: undefined })"
-                  >✕</button>
-                </div>
-              </label>
-
-              <!-- Light Source / Emitter Furniture (lights and media players) -->
-              <label v-if="p.entity_id.startsWith('light.') || p.entity_id.startsWith('media_player.')" class="flex flex-col gap-1">
-                <span class="text-[10px] text-fg-muted uppercase tracking-wide">Light Source Furniture</span>
-                <div class="flex items-center gap-2">
-                  <select
-                    class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated flex-1 min-w-0"
-                    :value="p.lightSourceFurnitureId ?? ''"
-                    @change="layout.updatePlacement(p.entity_id, { lightSourceFurnitureId: ($event.target as HTMLSelectElement).value || undefined })"
-                  >
-                    <option value="">— use marker position —</option>
-                    <optgroup v-for="group in fp.furnitureGroups" :key="group.id" :label="group.label">
-                      <option
-                        v-for="item in fp.furniture.filter(f => f.groupId === group.id)"
-                        :key="item.id"
-                        :value="item.id"
-                      >{{ item.label }}</option>
-                    </optgroup>
-                    <optgroup v-if="fp.furniture.some(f => !f.groupId)" label="Ungrouped">
-                      <option
-                        v-for="item in fp.furniture.filter(f => !f.groupId)"
-                        :key="item.id"
-                        :value="item.id"
-                      >{{ item.label }}</option>
-                    </optgroup>
-                  </select>
-                  <button
-                    v-if="p.lightSourceFurnitureId"
-                    class="text-xs text-fg-muted hover:text-fg shrink-0 px-1"
-                    title="Clear"
-                    @click.stop="layout.updatePlacement(p.entity_id, { lightSourceFurnitureId: undefined })"
-                  >✕</button>
-                </div>
-                <p class="text-[9px] text-fg-muted leading-snug">Point light emanates from the top of the chosen furniture piece.</p>
-              </label>
-
-              <!-- Brightness multiplier (lights only) — scales the emitted 3D light -->
-              <label v-if="p.entity_id.startsWith('light.')" class="flex flex-col gap-1">
-                <span class="text-[10px] text-fg-muted uppercase tracking-wide">
-                  Brightness multiplier
-                  <span class="text-accent font-mono ml-1">{{ (p.brightnessMultiplier ?? 1).toFixed(1) }}×</span>
-                </span>
-                <div class="flex items-center gap-2">
-                  <input
-                    type="range"
-                    :min="LIGHT_MULT_MIN"
-                    :max="LIGHT_MULT_MAX"
-                    step="0.1"
-                    class="flex-1 min-w-0 accent-accent"
-                    :value="p.brightnessMultiplier ?? 1"
-                    @input="layout.updatePlacement(p.entity_id, { brightnessMultiplier: +($event.target as HTMLInputElement).value })"
-                  />
-                  <button
-                    v-if="(p.brightnessMultiplier ?? 1) !== 1"
-                    class="text-xs text-fg-muted hover:text-fg shrink-0 px-1"
-                    title="Reset to 1×"
-                    @click.stop="layout.updatePlacement(p.entity_id, { brightnessMultiplier: undefined })"
-                  >✕</button>
-                </div>
-                <p class="text-[9px] text-fg-muted leading-snug">Scales how bright this light appears in the 3D scene ({{ LIGHT_MULT_MIN }}×–{{ LIGHT_MULT_MAX }}×).</p>
-              </label>
-
-              <!-- 3D Position -->
-              <div>
-                <span class="text-[10px] text-fg-muted uppercase tracking-wide">3D Position (metres)</span>
-                <div class="mt-1 grid grid-cols-3 gap-2">
-                  <label v-for="(axis, i) in (['X', 'Y', 'Z'] as const)" :key="axis" class="flex flex-col gap-1">
-                    <span class="text-[10px] text-fg-muted uppercase tracking-wide">{{ axis }}</span>
-                    <input
-                      type="number" step="0.1"
-                      class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg-elevated w-full"
-                      :value="p.position[i]"
-                      @change="onPositionChange(p.entity_id, i as 0|1|2, $event)"
-                    />
-                  </label>
-                </div>
-                <p class="text-[9px] text-fg-muted mt-1 leading-snug">X = left/right · Y = height · Z = front/back</p>
-              </div>
-            </div>
-          </div>
-
-          <!-- Add device section -->
-          <div class="mt-2 border-t border-bg-elevated pt-3 flex flex-col gap-2">
-            <button
-              class="btn-touch text-sm text-accent border border-accent/40 rounded-lg w-full flex items-center justify-center gap-2"
-              @click="showAddDeviceModal = true"
-            >
-              <Icon icon="mdi:plus" width="16" height="16" />
-              Add Device
-            </button>
-          </div>
-        </template>
-
-        <!-- PREFERENCES -->
-        <template v-if="tab === 'preferences'">
-          <div class="flex flex-col gap-4 px-1 py-2">
-            <!-- UI scale -->
-            <div class="flex flex-col gap-2">
-              <div class="flex items-center justify-between">
-                <span class="text-[10px] text-fg-muted uppercase tracking-wide">UI scale</span>
-                <span class="text-xs text-fg font-mono">{{ uiScalePct }}%</span>
-              </div>
-              <div class="flex items-center gap-2">
-                <span class="text-[10px] text-fg-muted shrink-0">A</span>
-                <input
-                  type="range"
-                  min="75"
-                  max="150"
-                  step="5"
-                  :value="uiScalePct"
-                  class="flex-1 accent-accent cursor-pointer"
-                  @input="onUiScaleInput"
-                />
-                <span class="text-base text-fg-muted shrink-0">A</span>
-              </div>
-              <button
-                v-if="theme.uiScale !== 1"
-                class="btn-touch text-xs text-fg-muted border border-bg-elevated rounded-lg w-full"
-                @click="theme.setUiScale(1)"
-              >Reset to 100%</button>
-            </div>
-
-            <!-- Accent colour -->
-            <div class="flex flex-col gap-3">
-              <span class="text-[10px] text-fg-muted uppercase tracking-wide">Accent colour</span>
-
-              <!-- Hue presets -->
-              <div class="flex flex-wrap gap-2">
-                <button
-                  v-for="preset in ACCENT_PRESETS"
-                  :key="preset.hue"
-                  class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs border transition-colors"
-                  :class="theme.accentHue === preset.hue
-                    ? 'border-accent/70 bg-accent/10 text-fg'
-                    : 'border-bg-elevated bg-bg text-fg-muted hover:text-fg'"
-                  @click="theme.setAccentHue(preset.hue)"
-                >
-                  <span
-                    class="w-3 h-3 rounded-full shrink-0"
-                    :style="{ background: hueToHex(preset.hue) }"
-                  />
-                  {{ preset.label }}
-                </button>
-              </div>
-
-              <!-- Custom colour picker -->
-              <label class="flex flex-col gap-1">
-                <span class="text-[10px] text-fg-muted uppercase tracking-wide">Custom</span>
-                <div class="flex items-center gap-2">
-                  <input
-                    type="color"
-                    class="h-8 w-10 rounded cursor-pointer border border-bg-elevated bg-bg p-0.5 shrink-0"
-                    :value="accentPickerHex"
-                    @input="onAccentPickerInput"
-                  />
-                  <span class="text-xs text-fg-muted font-mono">{{ accentPickerHex }}</span>
-                </div>
-              </label>
-
-              <!-- Light / Dark preview cards -->
-              <div class="flex flex-col gap-2">
-                <span class="text-[10px] text-fg-muted uppercase tracking-wide">Preview</span>
-                <div class="flex gap-2">
-                  <!-- Dark mode card -->
-                  <div
-                    class="flex-1 rounded-lg p-3 flex flex-col gap-2"
-                    :style="{ background: `rgb(${darkPreview.bg})` }"
-                  >
-                    <span class="text-[9px] uppercase tracking-wide" :style="{ color: `rgb(${darkPreview.fgMuted})` }">Dark</span>
-                    <span class="text-sm font-semibold" :style="{ color: accentDarkHex }">Active text</span>
-                    <span
-                      class="self-start px-2 py-0.5 rounded text-xs font-medium"
-                      :style="{ background: accentDarkHex, color: `rgb(${darkPreview.bg})` }"
-                    >Badge</span>
-                    <span
-                      class="self-start border rounded px-2 py-0.5 text-xs"
-                      :style="{ borderColor: accentDarkHex + '80', color: accentDarkHex }"
-                    >Border</span>
-                  </div>
-                  <!-- Light mode card -->
-                  <div
-                    class="flex-1 rounded-lg p-3 flex flex-col gap-2"
-                    :style="{ background: `rgb(${lightPreview.bg})` }"
-                  >
-                    <span class="text-[9px] uppercase tracking-wide" :style="{ color: `rgb(${lightPreview.fgMuted})` }">Light</span>
-                    <span class="text-sm font-semibold" :style="{ color: accentLightHex }">Active text</span>
-                    <span
-                      class="self-start px-2 py-0.5 rounded text-xs font-medium"
-                      :style="{ background: accentLightHex, color: `rgb(${lightPreview.bg})` }"
-                    >Badge</span>
-                    <span
-                      class="self-start border rounded px-2 py-0.5 text-xs"
-                      :style="{ borderColor: accentLightHex + '80', color: accentLightHex }"
-                    >Border</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Reset -->
-              <button
-                class="btn-touch text-xs text-fg-muted border border-bg-elevated rounded-lg w-full"
-                @click="theme.setAccentHue(174)"
-              >Reset to default (Teal)</button>
-            </div>
-
-            <!-- Dark palette variants -->
-            <div class="flex flex-col gap-2">
-              <span class="text-[10px] text-fg-muted uppercase tracking-wide">Dark style</span>
-              <div class="flex gap-2">
-                <button
-                  v-for="(p, key) in DARK_PALETTES"
-                  :key="key"
-                  class="flex-1 flex flex-col items-center gap-1.5 py-2 rounded-lg border text-xs transition-colors"
-                  :class="theme.darkVariant === key
-                    ? 'border-accent/70 bg-accent/10 text-fg'
-                    : 'border-bg-elevated bg-bg text-fg-muted hover:text-fg'"
-                  @click="theme.setDarkVariant(key as DarkVariant)"
-                >
-                  <span
-                    class="w-6 h-6 rounded-full border border-white/10"
-                    :style="{ background: `rgb(${p.bg})` }"
-                  />
-                  <span class="capitalize">{{ key }}</span>
-                </button>
-              </div>
-            </div>
-
-            <!-- Light palette variants -->
-            <div class="flex flex-col gap-2">
-              <span class="text-[10px] text-fg-muted uppercase tracking-wide">Light style</span>
-              <div class="flex gap-2">
-                <button
-                  v-for="(p, key) in LIGHT_PALETTES"
-                  :key="key"
-                  class="flex-1 flex flex-col items-center gap-1.5 py-2 rounded-lg border text-xs transition-colors"
-                  :class="theme.lightVariant === key
-                    ? 'border-accent/70 bg-accent/10 text-fg'
-                    : 'border-bg-elevated bg-bg text-fg-muted hover:text-fg'"
-                  @click="theme.setLightVariant(key as LightVariant)"
-                >
-                  <span
-                    class="w-6 h-6 rounded-full border border-black/10"
-                    :style="{ background: `rgb(${p.bg})` }"
-                  />
-                  <span class="capitalize">{{ key }}</span>
-                </button>
-              </div>
-            </div>
-
-            <!-- ── Custom palettes ──────────────────────────────── -->
-            <div class="flex flex-col gap-3 pt-1 border-t border-bg-elevated">
-              <div class="flex items-center justify-between">
-                <span class="text-[10px] text-fg-muted uppercase tracking-wide">Custom palettes</span>
-                <div class="flex gap-1.5">
-                  <button
-                    class="text-[10px] px-2 py-0.5 rounded border border-bg-elevated text-fg-muted hover:text-fg"
-                    :class="showImport ? 'text-accent border-accent/50' : ''"
-                    @click="showImport = !showImport; importJson = ''"
-                  >Import</button>
-                  <button
-                    v-if="theme.customPalettes?.length"
-                    class="text-[10px] px-2 py-0.5 rounded border border-bg-elevated text-fg-muted hover:text-fg"
-                    title="Copy all custom palettes as JSON"
-                    @click="copyExport"
-                  >Export</button>
-                </div>
-              </div>
-
-              <!-- Import textarea -->
-              <div v-if="showImport" class="flex flex-col gap-1.5">
-                <textarea
-                  v-model="importJson"
-                  rows="4"
-                  placeholder='Paste exported JSON here…'
-                  class="w-full text-[10px] font-mono rounded-lg border border-bg-elevated bg-bg p-2 text-fg resize-none focus:outline-none focus:border-accent/50"
-                />
-                <button
-                  class="btn-touch text-xs bg-accent/10 border border-accent/50 text-accent rounded-lg"
-                  :disabled="!importJson.trim()"
-                  @click="doImport"
-                >Apply Import</button>
-              </div>
-
-              <!-- Existing custom palettes -->
-              <div
-                v-for="p in (theme.customPalettes ?? [])"
-                :key="p.id"
-                class="flex flex-col rounded-lg border border-bg-elevated overflow-hidden"
-              >
-                <!-- Header row -->
-                <div class="flex items-center gap-2 px-2 py-1.5 bg-bg-panel">
-                  <span
-                    class="w-4 h-4 rounded-full shrink-0 border"
-                    :class="p.type === 'dark' ? 'border-white/10' : 'border-black/10'"
-                    :style="{ background: `rgb(${p.bg})` }"
-                  />
-                  <span
-                    class="flex-1 text-xs font-medium text-fg truncate"
-                    :class="(p.type === 'dark' ? theme.darkVariant : theme.lightVariant) === p.id ? 'text-accent' : ''"
-                  >{{ p.name }}</span>
-                  <span class="text-[9px] px-1.5 py-0.5 rounded font-medium"
-                    :class="p.type === 'dark' ? 'bg-slate-700/60 text-slate-300' : 'bg-amber-100/60 text-amber-700'">
-                    {{ p.type }}
-                  </span>
-                  <button
-                    class="text-[10px] text-fg-muted hover:text-accent px-1"
-                    :title="p.type === 'dark' ? 'Use as dark palette' : 'Use as light palette'"
-                    @click="p.type === 'dark' ? theme.setDarkVariant(p.id) : theme.setLightVariant(p.id)"
-                  >Use</button>
-                  <button
-                    class="text-[10px] text-fg-muted hover:text-fg px-1"
-                    @click="startEditPalette(p.id)"
-                  >{{ editingPaletteId === p.id ? 'Done' : 'Edit' }}</button>
-                  <button
-                    class="text-[10px] text-fg-muted hover:text-red-400 px-1"
-                    @click="theme.deleteCustomPalette(p.id)"
-                  >✕</button>
-                </div>
-
-                <!-- Edit form -->
-                <div v-if="editingPaletteId === p.id" class="flex flex-col gap-3 p-2 bg-bg">
-                  <!-- Name -->
-                  <label class="flex flex-col gap-1">
-                    <span class="text-[10px] text-fg-muted uppercase tracking-wide">Name</span>
-                    <input
-                      type="text"
-                      :value="p.name"
-                      class="text-xs rounded border border-bg-elevated bg-bg-panel px-2 py-1 text-fg focus:outline-none focus:border-accent/50"
-                      @change="updatePaletteField(p.id, 'name', $event)"
-                    />
-                  </label>
-
-                  <!-- UI Colors -->
-                  <div class="flex flex-col gap-1.5">
-                    <span class="text-[10px] text-fg-muted uppercase tracking-wide">UI Colors</span>
-                    <div class="grid grid-cols-2 gap-2">
-                      <label v-for="[field, label] in [['bg','Background'],['bgPanel','Panel'],['bgElevated','Elevated'],['fg','Text'],['fgMuted','Muted text']]" :key="field" class="flex items-center gap-1.5 text-[10px] text-fg-muted">
-                        <input
-                          type="color"
-                          class="h-6 w-6 rounded cursor-pointer border-0 p-0 shrink-0"
-                          :value="rgbTripletToHex(p[field as 'bg'])"
-                          @input="updatePaletteBgField(p.id, field as 'bg', $event)"
-                        />
-                        {{ label }}
-                      </label>
-                    </div>
-                  </div>
-
-                  <!-- Scene Colors -->
-                  <div class="flex flex-col gap-1.5">
-                    <span class="text-[10px] text-fg-muted uppercase tracking-wide">Scene Colors</span>
-                    <div class="grid grid-cols-2 gap-2">
-                      <label v-for="[field, label] in [['sceneClear','Clear'],['sceneFloor','Floor'],['sceneWall','Wall'],['sceneFurniture','Furniture']]" :key="field" class="flex items-center gap-1.5 text-[10px] text-fg-muted">
-                        <input
-                          type="color"
-                          class="h-6 w-6 rounded cursor-pointer border-0 p-0 shrink-0"
-                          :value="p[field as 'sceneClear']"
-                          @input="updatePaletteField(p.id, field as 'sceneClear', $event)"
-                        />
-                        {{ label }}
-                      </label>
-                    </div>
-                  </div>
-
-                  <!-- Scene Lighting -->
-                  <div class="flex gap-3">
-                    <label class="flex flex-col gap-1 flex-1">
-                      <span class="text-[10px] text-fg-muted uppercase tracking-wide">Ambient (0–1)</span>
-                      <input type="number" step="0.05" min="0" max="1"
-                        :value="p.sceneAmbient"
-                        class="text-xs rounded border border-bg-elevated bg-bg-panel px-2 py-1 text-fg focus:outline-none"
-                        @change="updatePaletteField(p.id, 'sceneAmbient', $event)"
-                      />
-                    </label>
-                    <label class="flex flex-col gap-1 flex-1">
-                      <span class="text-[10px] text-fg-muted uppercase tracking-wide">Sun (0–2)</span>
-                      <input type="number" step="0.05" min="0" max="2"
-                        :value="p.sceneSun"
-                        class="text-xs rounded border border-bg-elevated bg-bg-panel px-2 py-1 text-fg focus:outline-none"
-                        @change="updatePaletteField(p.id, 'sceneSun', $event)"
-                      />
-                    </label>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Add new buttons -->
-              <div class="flex gap-2">
-                <button
-                  class="flex-1 btn-touch text-xs border border-dashed border-bg-elevated text-fg-muted hover:text-fg hover:border-fg-muted rounded-lg"
-                  @click="theme.addCustomPalette('dark')"
-                >+ Dark palette</button>
-                <button
-                  class="flex-1 btn-touch text-xs border border-dashed border-bg-elevated text-fg-muted hover:text-fg hover:border-fg-muted rounded-lg"
-                  @click="theme.addCustomPalette('light')"
-                >+ Light palette</button>
-              </div>
-            </div>
-
-            <!-- ── Server ───────────────────────────────────────── -->
-            <div class="flex flex-col gap-3 pt-3 border-t border-bg-elevated">
-              <span class="text-[10px] text-fg-muted uppercase tracking-wide">Server</span>
-              <div class="flex items-center justify-between text-xs">
-                <span class="text-fg-muted">Home Assistant</span>
-                <span class="px-2 py-0.5 rounded-full text-[11px] font-medium"
-                  :class="device.config.value.haConfigured ? 'bg-accent/15 text-accent' : 'bg-bg-elevated text-fg'">
-                  {{ haSourceLabel }}
-                </span>
-              </div>
-
-              <div class="flex flex-col gap-1">
-                <span class="text-fg-muted text-xs">Open on other screens</span>
-                <span class="px-2 py-1 rounded-lg text-[11px] font-medium font-mono bg-bg-elevated text-fg break-all">
-                  {{ shareUrl || '—' }}
-                </span>
-              </div>
-
-              <!-- Factory reset -->
-              <div v-if="!confirmingReset">
-                <button
-                  class="w-full btn-touch text-xs rounded-lg border border-red-500/40 text-red-400 hover:bg-red-500/10"
-                  @click="confirmingReset = true"
-                >
-                  <Icon icon="mdi:restore-alert" width="16" height="16" />
-                  <span>Factory Reset</span>
-                </button>
-                <p class="mt-1.5 text-[10px] text-fg-muted leading-snug">
-                  Clears the server configuration and returns every screen to the setup screen. Layout and floorplan data are kept.
-                </p>
-              </div>
-              <div v-else class="flex flex-col gap-2 rounded-lg border border-red-500/40 bg-red-500/5 p-2.5">
-                <p class="text-[11px] text-fg leading-snug">
-                  Reset this device to first-launch setup? You'll need to re-enter the configuration.
-                </p>
-                <div class="flex gap-2">
-                  <button
-                    class="flex-1 btn-touch text-xs rounded-lg border border-bg-elevated text-fg-muted hover:text-fg"
-                    :disabled="resetting"
-                    @click="confirmingReset = false"
-                  >Cancel</button>
-                  <button
-                    class="flex-1 btn-touch text-xs rounded-lg bg-red-500 text-white hover:bg-red-600"
-                    :disabled="resetting"
-                    @click="doFactoryReset"
-                  >
-                    <Icon v-if="resetting" icon="mdi:loading" class="animate-spin" width="16" height="16" />
-                    <span>{{ resetting ? 'Resetting…' : 'Confirm Reset' }}</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </template>
-
-      </div>
-
-      <!-- Footer: Save -->
-      <div class="shrink-0 p-3 border-t border-bg-elevated">
-        <button
-          class="w-full btn-touch text-sm font-semibold transition-colors"
-          :class="isDirty ? 'bg-accent text-bg-panel' : 'opacity-40 cursor-not-allowed bg-bg-elevated text-fg'"
-          :disabled="!isDirty"
-          @click="onSave()"
+          v-for="t in TABS"
+          :key="t.id"
+          role="tab"
+          :aria-selected="tab === t.id"
+          class="relative flex flex-col items-center justify-center gap-0.5 h-14 text-[11px] font-medium transition-colors"
+          :class="tab === t.id ? 'text-accent' : 'text-fg-muted active:text-fg'"
+          @click="tab = t.id"
         >
-          {{ isDirty ? (tab === 'devices' ? 'Save Devices' : tab === 'preferences' ? 'Save Preferences' : 'Save Floorplan') : 'No Changes' }}
+          <span class="relative">
+            <Icon :icon="t.icon" width="22" height="22" />
+            <span v-if="dirtyByTab[t.id]" class="absolute -top-0.5 -right-1 w-2 h-2 rounded-full bg-yellow-500 ring-2 ring-bg-panel" />
+          </span>
+          {{ t.label }}
+          <span v-if="tab === t.id" class="absolute bottom-0 left-3 right-3 h-0.5 rounded-full bg-accent" />
         </button>
+      </nav>
+
+      <!-- Body -->
+      <div class="flex-1 overflow-y-auto overscroll-contain p-3">
+        <SettingsRoomsTab v-if="tab === 'rooms'" />
+        <SettingsFurnitureTab v-else-if="tab === 'furniture'" />
+        <SettingsDevicesTab v-else-if="tab === 'devices'" />
+        <SettingsAppearanceTab v-else-if="tab === 'preferences'" />
+        <SettingsSystemTab v-else-if="tab === 'system'" />
+      </div>
+
+      <!-- Footer: one save for everything -->
+      <div class="shrink-0 px-3 py-3 border-t border-fg/10">
+        <div v-if="anyDirty" class="flex gap-2">
+          <button
+            class="btn-touch flex-1 text-sm"
+            :class="discardArmed ? '!bg-red-500 !text-white' : ''"
+            :disabled="saving"
+            @click="onDiscard"
+          >{{ discardArmed ? 'Tap again to discard' : 'Discard' }}</button>
+          <button class="btn-touch flex-[2] gap-2 text-sm font-semibold bg-accent !text-bg" :disabled="saving" @click="saveAll">
+            <Icon v-if="saving" icon="mdi:loading" class="animate-spin" width="18" height="18" />
+            <span>{{ saving ? 'Saving…' : 'Save changes' }}</span>
+          </button>
+        </div>
+        <div v-else class="h-11 flex items-center justify-center gap-2 text-xs text-fg-muted">
+          <Icon icon="mdi:check-circle-outline" width="16" height="16" />
+          All changes saved
+        </div>
       </div>
     </div>
   </Transition>
 
-  <!-- Add Device Modal -->
-  <Teleport to="body">
-    <Transition
-      enter-active-class="transition duration-150 ease-out"
-      enter-from-class="opacity-0"
-      enter-to-class="opacity-100"
-      leave-active-class="transition duration-100 ease-in"
-      leave-from-class="opacity-100"
-      leave-to-class="opacity-0"
-    >
-      <div
-        v-if="showAddDeviceModal"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
-        @pointerdown.self="showAddDeviceModal = false"
-      >
-        <div
-          class="relative w-full max-w-lg bg-bg-panel rounded-2xl shadow-2xl border border-bg-elevated flex flex-col max-h-[80vh]"
-          @pointerdown.stop
-        >
-          <!-- Header -->
-          <div class="flex items-center justify-between px-5 py-4 border-b border-bg-elevated shrink-0">
-            <div>
-              <h2 class="text-base font-semibold text-fg">Add Device</h2>
-              <p class="text-xs text-fg-muted mt-0.5">{{ availableEntities.length }} available · click a device to place it</p>
-            </div>
-            <button
-              class="text-fg-muted hover:text-fg p-1.5 rounded-lg hover:bg-bg-elevated transition-colors"
-              @click="showAddDeviceModal = false"
-            >
-              <Icon icon="mdi:close" width="18" height="18" />
-            </button>
-          </div>
-
-          <!-- Search -->
-          <div class="px-4 py-3 border-b border-bg-elevated shrink-0">
-            <div class="relative">
-              <Icon icon="mdi:magnify" class="absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted pointer-events-none" width="16" height="16" />
-              <input
-                ref="addDeviceModalInput"
-                v-model="addDeviceSearch"
-                type="search"
-                placeholder="Search by name or entity ID…"
-                class="bg-bg text-fg text-sm rounded-xl pl-9 pr-4 py-2.5 border border-bg-elevated w-full placeholder:text-fg-muted/60 focus:border-accent/60 focus:outline-none transition-colors"
-              />
-            </div>
-          </div>
-
-          <!-- Entity list -->
-          <div class="overflow-y-auto flex-1">
-            <p v-if="filteredAvailableEntities.length === 0" class="text-sm text-fg-muted text-center py-10">
-              No available entities match "{{ addDeviceSearch }}"
-            </p>
-            <button
-              v-for="e in filteredAvailableEntities"
-              :key="e.entity_id"
-              class="w-full flex items-center gap-3 px-4 py-3 hover:bg-accent/8 transition-colors text-left border-b border-bg-elevated/40 last:border-0"
-              @click="selectAddDevice(e.entity_id)"
-            >
-              <div class="w-9 h-9 rounded-xl bg-bg-elevated flex items-center justify-center shrink-0">
-                <Icon :icon="getAutoIcon(e.entity_id)" class="text-fg-muted" width="20" height="20" />
-              </div>
-              <div class="min-w-0 flex-1">
-                <div class="flex items-center gap-2">
-                  <span class="text-sm text-fg truncate font-medium">{{ (e.attributes?.friendly_name as string | undefined) ?? e.entity_id }}</span>
-                  <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-bg-elevated text-fg-muted font-mono shrink-0">{{ entityDomain(e.entity_id) }}</span>
-                </div>
-                <div class="flex items-center gap-2 mt-0.5">
-                  <span class="text-xs text-fg-muted font-mono truncate">{{ e.entity_id }}</span>
-                  <span
-                    v-if="e.state"
-                    class="text-[10px] px-1.5 py-0 rounded-full shrink-0 font-medium"
-                    :class="['on','open','playing','unlocked','true'].includes(e.state)
-                      ? 'bg-accent/20 text-accent'
-                      : 'bg-bg border border-bg-elevated text-fg-muted'"
-                  >{{ e.state }}</span>
-                </div>
-              </div>
-              <Icon icon="mdi:plus-circle-outline" class="text-fg-muted shrink-0" width="18" height="18" />
-            </button>
-          </div>
+  <SettingsModal :open="confirmClose" title="Save your changes?" size="sm" @close="confirmClose = false">
+    <p class="text-sm text-fg-muted leading-relaxed">
+      You have unsaved changes. Save them so every screen gets them, or discard them to go back to the last saved version.
+    </p>
+    <template #footer>
+      <div class="flex flex-col gap-2 w-full">
+        <button class="btn-touch gap-2 text-sm font-semibold bg-accent !text-bg" :disabled="saving" @click="saveAndClose">
+          <Icon v-if="saving" icon="mdi:loading" class="animate-spin" width="18" height="18" />
+          <span>Save and close</span>
+        </button>
+        <div class="flex gap-2">
+          <button class="btn-touch flex-1 text-sm text-red-500" :disabled="saving" @click="discardAndClose">Discard</button>
+          <button class="btn-touch flex-1 text-sm" @click="confirmClose = false">Keep editing</button>
         </div>
       </div>
-    </Transition>
-  </Teleport>
-
-  <!-- Isolated 3D group editor (fullscreen overlay via Teleport) -->
-  <Teleport to="body">
-    <FurnitureGroupViewer
-      v-if="viewerGroupId"
-      :group-id="viewerGroupId"
-      @close="viewerGroupId = null"
-    />
-  </Teleport>
+    </template>
+  </SettingsModal>
 </template>

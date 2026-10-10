@@ -55,7 +55,7 @@ The first browser that opens the add-on shows a short **setup screen** — no co
 
 The Home Assistant connection is already made by the Supervisor, so everything on that screen is optional: a **toolbar PIN** (locks the editor controls on every screen) and **WiFi QR credentials** (shown to guests via the corner WiFi button).
 
-To start over, use **Factory Reset** (Settings → Prefs tab). Your floorplan and device layout are kept.
+To start over, use **Factory Reset** (Settings → System tab). Your floorplan and device layout are kept.
 
 ## Publishing your own image
 
@@ -109,7 +109,8 @@ If you forked the repo, point [haive/config.yaml](haive/config.yaml) `image:` at
 - `components/controls/` — per-domain control UIs.
 - `components/ui/` — overlay components.
   - `FloorplanDotEditor.vue` — SVG 2D floorplan planner (drag vertices, place openings).
-  - `FloorplanEditorPanel.vue` — room/wall/opening property panel.
+  - `FloorplanEditorPanel.vue` — the Settings panel shell (tabs, save/discard for all tabs, unsaved-changes guard).
+  - `settings/` — one component per Settings tab (`SettingsRoomsTab`, `SettingsFurnitureTab`, `SettingsDevicesTab`, `SettingsAppearanceTab`, `SettingsSystemTab`) plus shared form pieces (`SettingsField`, `SettingsNumber`, `SettingsColor`, `SettingsItem`, `SettingsModal`, …).
   - `FurnitureItemForm.vue` — furniture item editor.
   - `LibraryItemPreview.vue` — furniture library item preview.
   - `SaveViewButton.vue` — save/lock camera view button.

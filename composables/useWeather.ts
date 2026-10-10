@@ -1,15 +1,46 @@
 import type { HassEntity } from 'home-assistant-js-websocket'
 
-export type Precipitation = 'rain' | 'snow' | 'none'
-
 // Home Assistant standard weather conditions.
-const RAIN_CONDITIONS = new Set(['rainy', 'pouring', 'lightning-rainy', 'hail'])
-const SNOW_CONDITIONS = new Set(['snowy', 'snowy-rainy'])
 const HEAVY_CONDITIONS = new Set(['pouring', 'lightning-rainy'])
 const OVERCAST_CONDITIONS = new Set([
   'cloudy', 'fog', 'rainy', 'pouring', 'snowy', 'snowy-rainy',
   'lightning', 'lightning-rainy', 'hail', 'exceptional',
 ])
+const LIGHTNING_CONDITIONS = new Set(['lightning', 'lightning-rainy'])
+
+// Per-condition particle density (0..1) for each precipitation layer. Layers
+// are independent so mixed conditions (snowy-rainy) render both at once.
+const RAIN_AMOUNT: Record<string, number> = {
+  rainy: 0.55, pouring: 1, 'lightning-rainy': 0.9, 'snowy-rainy': 0.35,
+}
+const SNOW_AMOUNT: Record<string, number> = { snowy: 0.75, 'snowy-rainy': 0.45 }
+const HAIL_AMOUNT: Record<string, number> = { hail: 0.8 }
+
+/** Cloud cover 0..1 and how storm-dark the clouds are 0..1. */
+const CLOUDS: Record<string, { cover: number; dark: number }> = {
+  partlycloudy:      { cover: 0.4,  dark: 0 },
+  'windy-variant':   { cover: 0.45, dark: 0.15 },
+  cloudy:            { cover: 0.9,  dark: 0.4 },
+  rainy:             { cover: 0.85, dark: 0.6 },
+  pouring:           { cover: 1,    dark: 0.82 },
+  lightning:         { cover: 0.9,  dark: 0.88 },
+  'lightning-rainy': { cover: 1,    dark: 0.92 },
+  hail:              { cover: 0.9,  dark: 0.72 },
+  snowy:             { cover: 0.75, dark: 0.3 },
+  'snowy-rainy':     { cover: 0.85, dark: 0.5 },
+  exceptional:       { cover: 0.6,  dark: 0.6 },
+}
+
+/** Exponential scene-fog density — real depth haze, not just particles. */
+const FOG_DENSITY: Record<string, number> = {
+  fog: 0.042, pouring: 0.02, 'lightning-rainy': 0.018, rainy: 0.011,
+  snowy: 0.02, 'snowy-rainy': 0.016, hail: 0.012, cloudy: 0.005,
+}
+
+/** Factors converting HA wind units to m/s. */
+const WIND_TO_MS: Record<string, number> = {
+  'km/h': 1 / 3.6, 'm/s': 1, mph: 0.44704, kn: 0.514444, kt: 0.514444, 'ft/s': 0.3048,
+}
 
 // Module-scoped singleton so the toggle button and the scene share one flag.
 // When false, every effect derivation collapses to a neutral "clear" scene.
@@ -17,17 +48,22 @@ const weatherEnabled = ref(true)
 
 /** Conditions the mock-mode test button cycles through. */
 export const DEMO_CONDITIONS = [
-  'sunny', 'partlycloudy', 'cloudy', 'fog', 'rainy', 'pouring', 'snowy', 'clear-night',
+  'sunny', 'partlycloudy', 'cloudy', 'fog', 'rainy', 'pouring', 'lightning-rainy',
+  'hail', 'snowy', 'snowy-rainy', 'clear-night',
 ] as const
 
 // Manual condition override for testing (driven by the mock-mode cycle button).
 // null = follow the live/mock entity; a string forces that condition everywhere.
 const overrideCondition = ref<string | null>(null)
 
+// Sun-light multiplier written by the scene as cloud clusters drift over the
+// house (1 = no cloud overhead). Shared so SceneRoot can dim its sun light.
+const cloudShade = ref(1)
+
 /**
  * Reads the live Home Assistant weather entity (first `weather.*` found) and
  * exposes reactive, presentation-ready derivations used to drive the 3D scene:
- * precipitation type/intensity for particle effects plus sun/ambient dimming
+ * per-layer precipitation density, wind, fog and lightning plus sun/ambient dimming
  * factors so overcast conditions darken the dollhouse.
  */
 export function useWeather() {
@@ -80,17 +116,31 @@ export function useWeather() {
     })
   })
 
-  const precipitation = computed<Precipitation>(() => {
-    const c = effectiveCondition.value
-    if (RAIN_CONDITIONS.has(c)) return 'rain'
-    if (SNOW_CONDITIONS.has(c)) return 'snow'
-    return 'none'
-  })
+  /** Rain / snow / hail particle density 0..1 (each layer independent). */
+  const rainAmount = computed(() => RAIN_AMOUNT[effectiveCondition.value] ?? 0)
+  const snowAmount = computed(() => SNOW_AMOUNT[effectiveCondition.value] ?? 0)
+  const hailAmount = computed(() => HAIL_AMOUNT[effectiveCondition.value] ?? 0)
+  const hasLightning = computed(() => LIGHTNING_CONDITIONS.has(effectiveCondition.value))
+  const fogDensity = computed(() => FOG_DENSITY[effectiveCondition.value] ?? 0)
 
-  /** 0 = none, ~0.55 = normal, 1 = heavy. Drives particle density. */
-  const intensity = computed<number>(() => {
-    if (HEAVY_CONDITIONS.has(effectiveCondition.value)) return 1
-    return precipitation.value === 'none' ? 0 : 0.55
+  /** Wind speed in m/s (0 when weather effects are off). */
+  const windMs = computed(() => {
+    if (!weatherEnabled.value) return 0
+    const k = WIND_TO_MS[windSpeedUnit.value] ?? 1 / 3.6
+    const ms = windSpeed.value * k
+    // 'windy' conditions without a speed reading still deserve a stiff breeze.
+    return effectiveCondition.value.startsWith('windy') ? Math.max(ms, 10) : ms
+  })
+  /**
+   * Unit XZ vector the wind blows *toward*. HA's wind_bearing is the compass
+   * direction it comes *from*; the scene treats -Z as north and +X as east.
+   * Defaults to a westerly (blowing toward +X) when no bearing is reported.
+   */
+  const windDir = computed<[number, number]>(() => {
+    const raw = Number(entity.value?.attributes?.wind_bearing)
+    const from = Number.isFinite(raw) ? raw : 270
+    const to = ((from + 180) * Math.PI) / 180
+    return [Math.sin(to), -Math.cos(to)]
   })
 
   const isNight = computed(() => effectiveCondition.value === 'clear-night')
@@ -122,14 +172,10 @@ export function useWeather() {
   const skyColor = computed(() => skyStyle.value.sky)
   const skyTintAmount = computed(() => skyStyle.value.skyAmt)
 
-  /** Cloud cover 0..1, drives the drifting cloud puffs above the floorplan. */
-  const cloudCoverage = computed<number>(() => {
-    switch (effectiveCondition.value) {
-      case 'partlycloudy': return 0.45
-      case 'cloudy': return 1
-      default: return 0
-    }
-  })
+  /** Cloud cover 0..1, drives the drifting cloud clusters above the floorplan. */
+  const cloudCoverage = computed<number>(() => CLOUDS[effectiveCondition.value]?.cover ?? 0)
+  /** 0 = fluffy white, 1 = dark storm cloud. */
+  const cloudDarkness = computed<number>(() => CLOUDS[effectiveCondition.value]?.dark ?? 0)
 
   /** Whether to render the night star field. */
   const showStars = computed(() => isNight.value)
@@ -183,8 +229,13 @@ export function useWeather() {
     windSpeed,
     windSpeedUnit,
     forecast,
-    precipitation,
-    intensity,
+    rainAmount,
+    snowAmount,
+    hailAmount,
+    hasLightning,
+    fogDensity,
+    windMs,
+    windDir,
     isNight,
     isFoggy,
     sunFactor,
@@ -194,6 +245,8 @@ export function useWeather() {
     skyColor,
     skyTintAmount,
     cloudCoverage,
+    cloudDarkness,
+    cloudShade,
     showStars,
     enabled,
     toggle,

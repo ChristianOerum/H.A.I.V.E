@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { TresCanvas } from '@tresjs/core'
+import { Icon } from '@iconify/vue'
 import { OrbitControls } from '@tresjs/cientos'
 import * as THREE from 'three'
 import { resolveFurnitureGeometry } from '~/utils/furnitureGeometry'
@@ -79,31 +80,38 @@ const selectedItem = computed(() =>
     : null
 )
 
-function numVal(e: Event) {
-  return +(e.target as HTMLInputElement).value
-}
-
 // Close on Escape key
 function onKeyDown(e: KeyboardEvent) {
   if (e.key === 'Escape') emit('close')
 }
-onMounted(() => window.addEventListener('keydown', onKeyDown))
-onUnmounted(() => window.removeEventListener('keydown', onKeyDown))
+// The viewer covers the main scene with its own canvas; pause the main one
+// meanwhile so two WebGL scenes never render at once.
+const { sceneSuspended } = useGraphicsQuality()
+onMounted(() => {
+  window.addEventListener('keydown', onKeyDown)
+  sceneSuspended.value = true
+})
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeyDown)
+  sceneSuspended.value = false
+})
 </script>
 
 <template>
   <!-- Fullscreen overlay -->
-  <div class="fixed inset-0 z-50 flex flex-col bg-[#0f172a]">
+  <div class="fixed inset-0 z-50 flex flex-col bg-bg text-fg">
     <!-- Toolbar -->
-    <div class="flex items-center gap-3 px-4 py-2.5 bg-bg-elevated border-b border-bg shrink-0">
-      <span class="text-xs text-fg-muted uppercase tracking-wide">3D Group Editor</span>
-      <span class="text-sm text-fg font-medium">{{ group?.label ?? '—' }}</span>
+    <div class="flex items-center gap-3 pl-4 pr-2 h-14 bg-bg-panel border-b border-fg/10 shrink-0">
+      <Icon icon="mdi:cube-scan" width="22" height="22" class="text-accent shrink-0" />
+      <div class="min-w-0">
+        <div class="text-sm font-semibold truncate">{{ group?.label ?? 'Group' }}</div>
+        <div class="text-[11px] text-fg-muted">3D editor · tap a part to select · drag to orbit · pinch or scroll to zoom</div>
+      </div>
       <div class="flex-1" />
-      <span class="text-xs text-fg-muted hidden sm:block">Click items to select · Scroll to zoom · Drag to orbit</span>
-      <button
-        class="ml-2 px-3 py-1.5 text-xs rounded-lg bg-bg border border-bg-elevated text-fg-muted hover:text-fg hover:border-accent/50 transition-colors"
-        @click="emit('close')"
-      >✕ Close</button>
+      <button class="btn-touch gap-2 text-sm font-semibold bg-accent !text-bg" @click="emit('close')">
+        <Icon icon="mdi:check" width="18" height="18" />
+        <span>Done</span>
+      </button>
     </div>
 
     <!-- Body: canvas + sidebar -->
@@ -112,7 +120,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeyDown))
       <div class="flex-1 relative">
       <TresCanvas
         :clear-color="sceneColors.clear"
-        :shadow-map-type="2"
+        :shadow-map-type="THREE.PCFShadowMap"
+        render-mode="on-demand"
         class="!absolute inset-0"
       >
         <!-- Camera -->
@@ -188,78 +197,50 @@ onUnmounted(() => window.removeEventListener('keydown', onKeyDown))
     </div>
 
       <!-- Properties sidebar -->
-      <div class="w-72 shrink-0 bg-bg-elevated border-l border-bg flex flex-col overflow-y-auto">
-        <!-- Group properties -->
-        <div class="px-3 pt-3 pb-2 border-b border-bg">
-          <p class="text-[10px] text-fg-muted uppercase tracking-wide mb-2">Group</p>
-          <label class="flex flex-col gap-1 mb-2">
-            <span class="text-[10px] text-fg-muted uppercase tracking-wide">Label</span>
+      <div class="w-96 max-w-[50%] shrink-0 bg-bg-panel border-l border-fg/10 flex flex-col overflow-y-auto overscroll-contain p-3 gap-5">
+        <SettingsSection title="Group">
+          <SettingsField label="Name">
             <input
-              class="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-bg w-full"
+              class="field-input"
               :value="group?.label ?? ''"
               @change="fp.updateFurnitureGroup(groupId, { label: ($event.target as HTMLInputElement).value })"
             />
-          </label>
-          <p class="text-[9px] text-fg-muted uppercase tracking-wide mb-1">Rotation</p>
-          <div class="grid grid-cols-3 gap-1.5">
-            <label class="flex flex-col gap-0.5">
-              <span class="text-[9px] text-fg-muted uppercase">Rot X°</span>
-              <input type="number" step="5" class="bg-bg text-fg text-xs rounded px-1.5 py-1 border border-bg-elevated w-full"
-                :value="group?.rotX ?? 0" @change="fp.updateFurnitureGroup(groupId, { rotX: numVal($event) })" />
-            </label>
-            <label class="flex flex-col gap-0.5">
-              <span class="text-[9px] text-fg-muted uppercase">Rot Y°</span>
-              <input type="number" step="5" class="bg-bg text-fg text-xs rounded px-1.5 py-1 border border-bg-elevated w-full"
-                :value="group?.rotY ?? 0" @change="fp.updateFurnitureGroup(groupId, { rotY: numVal($event) })" />
-            </label>
-            <label class="flex flex-col gap-0.5">
-              <span class="text-[9px] text-fg-muted uppercase">Rot Z°</span>
-              <input type="number" step="5" class="bg-bg text-fg text-xs rounded px-1.5 py-1 border border-bg-elevated w-full"
-                :value="group?.rotZ ?? 0" @change="fp.updateFurnitureGroup(groupId, { rotZ: numVal($event) })" />
-            </label>
+          </SettingsField>
+          <div class="grid grid-cols-3 gap-2">
+            <SettingsField label="Rotate X">
+              <SettingsNumber label="Group rotation X" :value="group?.rotX ?? 0" :step="5" unit="°" @change="(v) => fp.updateFurnitureGroup(groupId, { rotX: v })" />
+            </SettingsField>
+            <SettingsField label="Rotate Y">
+              <SettingsNumber label="Group rotation Y" :value="group?.rotY ?? 0" :step="5" unit="°" @change="(v) => fp.updateFurnitureGroup(groupId, { rotY: v })" />
+            </SettingsField>
+            <SettingsField label="Rotate Z">
+              <SettingsNumber label="Group rotation Z" :value="group?.rotZ ?? 0" :step="5" unit="°" @change="(v) => fp.updateFurnitureGroup(groupId, { rotZ: v })" />
+            </SettingsField>
           </div>
-        </div>
+        </SettingsSection>
 
-        <!-- Items list + selected item properties -->
-        <div class="flex-1 px-3 pt-2 pb-3 flex flex-col">
-          <div class="flex items-center justify-between mb-1.5">
-            <p class="text-[10px] text-fg-muted uppercase tracking-wide">Items</p>
-            <button
-              class="text-xs px-2 py-0.5 rounded bg-accent/20 text-accent border border-accent/30 hover:bg-accent/30 transition-colors"
-              title="Add new item to group"
-              @click="fp.addFurniture(groupId)"
-            >+ Add</button>
-          </div>
-          <div class="flex-1 overflow-y-auto">
-            <div
+        <SettingsSection :title="`Parts (${items.length})`">
+          <template #actions>
+            <button class="field-action" @click="fp.addFurniture(groupId)">+ Add part</button>
+          </template>
+          <div class="flex flex-col gap-1.5">
+            <SettingsItem
               v-for="item in items"
               :key="item.id"
-              class="mb-0.5 rounded-lg border cursor-pointer px-2.5 py-1.5 transition-colors"
-              :class="fp.selection?.id === item.id
-                ? 'border-accent bg-accent/10'
-                : 'border-transparent bg-bg hover:border-accent/30'"
-              @click="selectItem(item.id)"
+              :title="item.label"
+              :subtitle="item.subtract ? 'Cut-out' : undefined"
+              :icon="item.subtract ? 'mdi:minus-box-outline' : 'mdi:cube-outline'"
+              :open="fp.selection?.id === item.id"
+              @toggle="selectItem(item.id)"
             >
-              <div class="flex items-center justify-between">
-                <span class="text-xs text-fg truncate mr-1">{{ item.label }}</span>
-                <div class="flex items-center gap-1 shrink-0">
-                  <span v-if="item.subtract" class="text-[9px] text-red-400">subtract</span>
-                  <button
-                    class="text-[10px] text-red-400 px-1.5 py-0.5 rounded hover:bg-red-500/20 transition-colors"
-                    title="Delete item"
-                    @click.stop="fp.deleteFurniture(item.id)"
-                  >Del</button>
-                </div>
-              </div>
-              <!-- Inline properties for selected item -->
-              <FurnitureItemForm
-                v-if="fp.selection?.id === item.id"
-                :item="item"
-              />
-            </div>
-            <p v-if="items.length === 0" class="text-xs text-fg-muted italic mt-1">No items — click + Add</p>
+              <template #actions>
+                <SettingsDelete :label="item.label" @confirm="fp.deleteFurniture(item.id)" />
+              </template>
+              <FurnitureItemForm :item="item" />
+            </SettingsItem>
+            <p v-if="items.length === 0" class="field-hint text-center py-4">No parts yet — tap “Add part”.</p>
           </div>
-        </div>
+        </SettingsSection>
       </div>
     </div>
   </div>

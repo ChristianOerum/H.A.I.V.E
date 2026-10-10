@@ -6,34 +6,63 @@ const emit = defineEmits<{ done: [] }>()
 
 const { config, supervised, save } = useDeviceConfig()
 
+// ── Home Assistant (only asked for when not running as an add-on) ──
 const haUrl = ref(config.value.haUrl || 'http://homeassistant.local:8123')
 const haToken = ref('')
+const showToken = ref(false)
+const urlValid = computed(() => /^https?:\/\/\S+$/i.test(haUrl.value.trim()))
+
+// ── Advanced ──
+const showAdvanced = ref(false)
 const allowedLocalPrefixes = ref(
   (config.value.allowedLocalPrefixes ?? ['127.', '192.168.', '10.', '172.']).join(','),
 )
 
-// PIN (optional) — empty means the toolbar lock is disabled.
+// ── PIN (optional) — off means the toolbar lock is disabled ──
+const pinEnabled = ref(false)
 const authPin = ref('')
+const showPin = ref(false)
+const pinValid = computed(() => {
+  if (!pinEnabled.value) return true
+  const v = authPin.value.trim()
+  return v.length >= 4 && /^\d+$/.test(v)
+})
+// Only complain once the user has typed something.
+const pinError = computed(() => pinEnabled.value && authPin.value.length > 0 && !pinValid.value)
 
-// WiFi (optional) — empty ssid means the WiFi QR button stays hidden.
+// ── WiFi QR (optional) — off means the WiFi button stays hidden ──
+const wifiEnabled = ref(!!config.value.wifi?.ssid)
 const wifiSsid = ref(config.value.wifi?.ssid ?? '')
 const wifiPassword = ref('')
+const showWifiPassword = ref(false)
 const wifiSecurity = ref<WifiSecurity>(config.value.wifi?.security ?? 'WPA')
 const wifiHidden = ref(!!config.value.wifi?.hidden)
+const wifiValid = computed(() => !wifiEnabled.value || !!wifiSsid.value.trim())
+
+const SECURITY_OPTIONS: { value: WifiSecurity; label: string }[] = [
+  { value: 'WPA', label: 'WPA / WPA2 / WPA3' },
+  { value: 'WEP', label: 'WEP' },
+  { value: 'NONE', label: 'Open' },
+]
 
 const saving = ref(false)
 const error = ref('')
 
-const pinValid = computed(() => {
-  const v = authPin.value.trim()
-  return v.length === 0 || (v.length >= 4 && /^\d+$/.test(v))
+const canSubmit = computed(() => {
+  if (saving.value || !pinValid.value || !wifiValid.value) return false
+  if (supervised.value) return true
+  return urlValid.value && !!haToken.value.trim()
 })
 
-const canSubmit = computed(() => {
-  if (saving.value) return false
-  if (!pinValid.value) return false
-  if (supervised.value) return true
-  return !!haUrl.value.trim() && !!haToken.value.trim()
+/** What's still missing, shown next to the disabled Finish button. */
+const blocker = computed(() => {
+  if (!supervised.value) {
+    if (!urlValid.value) return 'Enter your Home Assistant address'
+    if (!haToken.value.trim()) return 'Paste a long-lived access token'
+  }
+  if (!pinValid.value) return 'PIN needs at least 4 digits'
+  if (!wifiValid.value) return 'Enter the WiFi network name'
+  return ''
 })
 
 // The address other screens should open to join this dashboard. Resolved after
@@ -50,9 +79,9 @@ async function submit() {
       haUrl: haUrl.value.trim(),
       haToken: haToken.value.trim(),
       allowedLocalPrefixes: allowedLocalPrefixes.value.trim(),
-      authPin: authPin.value.trim(),
+      authPin: pinEnabled.value ? authPin.value.trim() : '',
       wifi: {
-        ssid: wifiSsid.value.trim(),
+        ssid: wifiEnabled.value ? wifiSsid.value.trim() : '',
         password: wifiPassword.value,
         security: wifiSecurity.value,
         hidden: wifiHidden.value,
@@ -69,186 +98,224 @@ async function submit() {
 </script>
 
 <template>
-  <div
-    class="fixed inset-0 z-[100] flex items-center justify-center bg-bg text-fg p-3 sm:p-6 overflow-auto"
-    :style="{
-      '--bg': '243 238 226',
-      '--bg-panel': '248 245 238',
-      '--bg-elevated': '229 222 207',
-      '--fg': '41 37 36',
-      '--fg-muted': '120 113 108',
-    }"
-  >
-    <div class="w-full max-w-5xl flex flex-col gap-5 bg-bg-panel rounded-3xl p-5 sm:p-8 shadow-2xl my-auto">
-      <!-- Header -->
-      <div class="flex flex-col items-center gap-1 text-center">
-        <div class="flex items-center gap-2">
-          <Icon icon="mdi:home-assistant" width="30" height="30" class="text-accent" />
-          <span class="text-lg font-semibold tracking-[0.2em] text-accent">H.A.I.V.E.</span>
-        </div>
-        <h1 class="text-xl sm:text-2xl font-semibold">Welcome — let's set up your home</h1>
-        <p class="text-sm text-fg-muted max-w-xl">
-          This runs once, on the server. Every other screen in the house just opens the same address and is instantly in
-          sync — nothing to configure per device.
-        </p>
-      </div>
+  <div class="fixed inset-0 z-[100] bg-bg text-fg overflow-y-auto overscroll-contain">
+    <form class="min-h-full flex flex-col" @submit.prevent="submit">
+      <div class="flex-1 w-full max-w-5xl mx-auto px-4 sm:px-8 pt-8 pb-6 flex flex-col gap-6">
+        <!-- Header -->
+        <header class="flex flex-col items-center gap-2 text-center">
+          <div class="w-14 h-14 rounded-2xl bg-accent/15 text-accent flex items-center justify-center">
+            <Icon icon="mdi:home-assistant" width="32" height="32" />
+          </div>
+          <span class="text-xs font-semibold tracking-[0.25em] text-accent">H.A.I.V.E.</span>
+          <h1 class="text-2xl font-semibold">Welcome — let’s set up your home</h1>
+          <p class="text-sm text-fg-muted max-w-xl leading-relaxed">
+            You only do this once. Every other screen in the house opens the same address and is instantly in sync.
+          </p>
+        </header>
 
-      <!-- Two-column form area on landscape (>=md); stacks on portrait/small -->
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 items-start">
+          <!-- ── Left: connection ── -->
+          <div class="flex flex-col gap-4">
+            <section class="rounded-3xl bg-bg-panel border border-fg/10 p-5 flex flex-col gap-4">
+              <div class="flex items-center gap-3">
+                <span class="w-7 h-7 rounded-full bg-accent text-bg text-sm font-semibold flex items-center justify-center shrink-0">1</span>
+                <h2 class="text-base font-semibold">Home Assistant</h2>
+              </div>
 
-        <!-- LEFT column: connection -->
-        <section class="flex flex-col gap-4">
-          <h2 class="text-xs text-fg-muted uppercase tracking-wider font-semibold">Home Assistant</h2>
+              <!-- Add-on install: the Supervisor already provides the connection. -->
+              <div v-if="supervised" class="rounded-2xl bg-emerald-500/10 border border-emerald-500/30 p-4 flex gap-3">
+                <Icon icon="mdi:check-circle" width="22" height="22" class="shrink-0 text-emerald-500 mt-0.5" />
+                <div class="flex flex-col gap-0.5">
+                  <span class="text-sm font-semibold">Connected automatically</span>
+                  <p class="text-xs text-fg-muted leading-snug">
+                    HAIVE runs as a Home Assistant add-on, so there’s no address or token to enter.
+                  </p>
+                </div>
+              </div>
 
-          <!-- Add-on install: the Supervisor already provides the connection. -->
-          <div v-if="supervised" class="rounded-2xl border border-accent/40 bg-accent/10 p-4 flex gap-3">
-            <Icon icon="mdi:check-decagram" width="22" height="22" class="shrink-0 text-accent mt-0.5" />
-            <div class="flex flex-col gap-1">
-              <span class="text-sm font-semibold">Connected automatically</span>
-              <p class="text-xs text-fg-muted leading-snug">
-                HAIVE is running as a Home Assistant add-on, so it talks to Home Assistant directly. No URL or token
-                needed.
+              <template v-else>
+                <SettingsField label="Address" hint="Usually http://homeassistant.local:8123 or your server’s IP with :8123.">
+                  <input
+                    v-model="haUrl"
+                    type="url"
+                    inputmode="url"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="http://homeassistant.local:8123"
+                    class="field-input h-12 text-base"
+                    :class="haUrl && !urlValid ? '!border-red-400/70' : ''"
+                  />
+                </SettingsField>
+                <SettingsField label="Long-lived access token" hint="In Home Assistant: your profile → Security → Long-lived access tokens → Create token. It stays on this server and is never sent to the screens.">
+                  <div class="relative">
+                    <textarea
+                      v-if="showToken"
+                      v-model="haToken"
+                      rows="3"
+                      spellcheck="false"
+                      placeholder="Paste your token"
+                      class="w-full resize-none rounded-lg bg-bg border border-fg/10 px-3 py-2.5 pr-12 text-xs font-mono text-fg outline-none focus:border-accent/60"
+                    />
+                    <input
+                      v-else
+                      v-model="haToken"
+                      type="password"
+                      autocomplete="off"
+                      placeholder="Paste your token"
+                      class="field-input h-12 pr-12 font-mono"
+                    />
+                    <button
+                      type="button"
+                      class="absolute right-1 top-1 w-10 h-10 flex items-center justify-center rounded-lg text-fg-muted active:bg-bg-elevated"
+                      :aria-label="showToken ? 'Hide token' : 'Show token'"
+                      @click="showToken = !showToken"
+                    >
+                      <Icon :icon="showToken ? 'mdi:eye-off-outline' : 'mdi:eye-outline'" width="20" height="20" />
+                    </button>
+                  </div>
+                </SettingsField>
+              </template>
+            </section>
+
+            <div v-if="shareUrl" class="rounded-2xl border border-dashed border-fg/15 p-4 flex gap-3">
+              <Icon icon="mdi:monitor-multiple" width="22" height="22" class="shrink-0 text-accent mt-0.5" />
+              <p class="text-xs text-fg-muted leading-relaxed">
+                To add another screen, open <span class="font-mono font-medium text-fg">{{ shareUrl }}</span> on any tablet,
+                phone or wall panel on your network. All screens share this layout, theme and settings.
               </p>
             </div>
-          </div>
 
-          <template v-else>
-            <label class="flex flex-col gap-1.5">
-              <span class="text-[11px] text-fg-muted uppercase tracking-wide">Home Assistant URL</span>
-              <input
-                v-model="haUrl"
-                type="url"
-                inputmode="url"
-                placeholder="http://homeassistant.local:8123"
-                class="w-full rounded-xl border border-bg-elevated bg-bg px-4 py-3 text-base text-fg focus:outline-none focus:border-accent/60"
-              />
-            </label>
-            <label class="flex flex-col gap-1.5">
-              <span class="text-[11px] text-fg-muted uppercase tracking-wide">Long-Lived Access Token</span>
-              <textarea
-                v-model="haToken"
-                rows="3"
-                placeholder="Paste your HA long-lived access token"
-                class="w-full resize-none rounded-xl border border-bg-elevated bg-bg px-4 py-3 text-sm font-mono text-fg focus:outline-none focus:border-accent/60"
-              />
-              <span class="text-[11px] text-fg-muted">
-                Home Assistant → Profile → Long-Lived Access Tokens. The token stays on this server — it is never handed
-                to the screens.
-              </span>
-            </label>
-          </template>
-
-          <label class="flex flex-col gap-1.5">
-            <span class="text-[11px] text-fg-muted uppercase tracking-wide">Allowed Local Prefixes</span>
-            <input
-              v-model="allowedLocalPrefixes"
-              type="text"
-              placeholder="127.,192.168.,10.,172."
-              class="w-full rounded-xl border border-bg-elevated bg-bg px-4 py-3 text-base text-fg focus:outline-none focus:border-accent/60"
-            />
-            <span class="text-[11px] text-fg-muted">Comma-separated IP prefixes permitted to reach this dashboard.</span>
-          </label>
-
-          <div v-if="shareUrl" class="rounded-xl bg-bg-elevated/70 border border-bg-elevated p-4 flex gap-3">
-            <Icon icon="mdi:monitor-multiple" width="22" height="22" class="shrink-0 text-fg-muted mt-0.5" />
-            <p class="text-xs text-fg-muted leading-snug">
-              Open <span class="font-mono text-fg">{{ shareUrl }}</span> on any tablet, phone or wall panel on your
-              network to add another screen. They all share this layout, theme and settings.
-            </p>
-          </div>
-        </section>
-
-        <!-- RIGHT column: options -->
-        <section class="flex flex-col gap-5">
-          <h2 class="text-xs text-fg-muted uppercase tracking-wider font-semibold">Options</h2>
-
-          <!-- Toolbar PIN -->
-          <div class="flex flex-col gap-3 rounded-2xl border border-bg-elevated p-4">
-            <div class="flex items-center gap-2">
-              <Icon icon="mdi:lock-outline" width="20" height="20" class="text-fg-muted" />
-              <span class="text-sm font-semibold">Toolbar PIN <span class="text-fg-muted font-normal">(optional)</span></span>
-            </div>
-            <label class="flex flex-col gap-1.5">
-              <input
-                v-model="authPin"
-                type="password"
-                inputmode="numeric"
-                autocomplete="new-password"
-                placeholder="Leave blank to disable lock"
-                class="w-full rounded-xl border bg-bg px-4 py-3 text-base text-fg focus:outline-none focus:border-accent/60"
-                :class="pinValid ? 'border-bg-elevated' : 'border-red-400/70'"
-              />
-              <span v-if="!pinValid" class="text-[11px] text-red-500">PIN must be at least 4 digits.</span>
-              <span v-else class="text-[11px] text-fg-muted">Locks the editor toolbar on every screen behind a numeric PIN.</span>
-            </label>
-          </div>
-
-          <!-- WiFi QR -->
-          <div class="flex flex-col gap-3 rounded-2xl border border-bg-elevated p-4">
-            <div class="flex items-center gap-2">
-              <Icon icon="mdi:wifi" width="20" height="20" class="text-fg-muted" />
-              <span class="text-sm font-semibold">WiFi QR <span class="text-fg-muted font-normal">(optional)</span></span>
-            </div>
-            <label class="flex flex-col gap-1.5">
-              <span class="text-[11px] text-fg-muted uppercase tracking-wide">Network name (SSID)</span>
-              <input
-                v-model="wifiSsid"
-                type="text"
-                autocomplete="off"
-                placeholder="Leave blank to hide the WiFi button"
-                class="w-full rounded-xl border border-bg-elevated bg-bg px-4 py-3 text-base text-fg focus:outline-none focus:border-accent/60"
-              />
-            </label>
-            <div v-if="wifiSsid.trim()" class="flex flex-col gap-3">
-              <div class="grid grid-cols-2 gap-3">
-                <label class="flex flex-col gap-1.5">
-                  <span class="text-[11px] text-fg-muted uppercase tracking-wide">Security</span>
-                  <select
-                    v-model="wifiSecurity"
-                    class="w-full rounded-xl border border-bg-elevated bg-bg px-3 py-3 text-base text-fg focus:outline-none focus:border-accent/60"
-                  >
-                    <option value="WPA">WPA / WPA2 / WPA3</option>
-                    <option value="WEP">WEP</option>
-                    <option value="NONE">None (open)</option>
-                  </select>
-                </label>
-                <label class="flex items-end gap-2 pb-2">
-                  <input
-                    v-model="wifiHidden"
-                    type="checkbox"
-                    class="h-5 w-5 rounded border-bg-elevated text-accent focus:ring-accent/40"
-                  />
-                  <span class="text-sm">Hidden network</span>
-                </label>
+            <!-- Advanced: rarely needed, so tucked away -->
+            <div class="rounded-2xl border border-fg/10">
+              <button
+                type="button"
+                class="w-full flex items-center gap-3 px-4 h-12 text-sm text-fg-muted"
+                :aria-expanded="showAdvanced"
+                @click="showAdvanced = !showAdvanced"
+              >
+                <Icon icon="mdi:tune-variant" width="18" height="18" />
+                <span class="flex-1 text-left font-medium">Advanced</span>
+                <Icon icon="mdi:chevron-down" width="20" height="20" class="transition-transform" :class="showAdvanced ? 'rotate-180' : ''" />
+              </button>
+              <div v-if="showAdvanced" class="px-4 pb-4">
+                <SettingsField label="Allowed network addresses" hint="Comma-separated IP prefixes that may open this dashboard. The default covers normal home networks.">
+                  <input v-model="allowedLocalPrefixes" type="text" spellcheck="false" placeholder="127.,192.168.,10.,172." class="field-input font-mono" />
+                </SettingsField>
               </div>
-              <label v-if="wifiSecurity !== 'NONE'" class="flex flex-col gap-1.5">
-                <span class="text-[11px] text-fg-muted uppercase tracking-wide">Password</span>
-                <input
-                  v-model="wifiPassword"
-                  type="password"
-                  autocomplete="new-password"
-                  placeholder="WiFi password"
-                  class="w-full rounded-xl border border-bg-elevated bg-bg px-4 py-3 text-base text-fg focus:outline-none focus:border-accent/60"
-                />
-              </label>
             </div>
           </div>
-        </section>
+
+          <!-- ── Right: optional extras ── -->
+          <div class="flex flex-col gap-4">
+            <!-- PIN -->
+            <section class="rounded-3xl bg-bg-panel border border-fg/10 p-5 flex flex-col gap-4">
+              <div class="flex items-center gap-3">
+                <span class="w-7 h-7 rounded-full bg-bg-elevated text-fg-muted text-sm font-semibold flex items-center justify-center shrink-0">2</span>
+                <div class="flex-1 min-w-0">
+                  <h2 class="text-base font-semibold">Lock settings with a PIN</h2>
+                  <p class="text-xs text-fg-muted">Optional · stops guests changing the layout</p>
+                </div>
+                <ToggleSwitch :on="pinEnabled" label="Lock settings with a PIN" @toggle="pinEnabled = !pinEnabled" />
+              </div>
+              <SettingsField v-if="pinEnabled" label="PIN" :hint="pinError ? undefined : 'At least 4 digits. Device controls stay usable without it.'">
+                <div class="relative">
+                  <input
+                    v-model="authPin"
+                    :type="showPin ? 'text' : 'password'"
+                    inputmode="numeric"
+                    autocomplete="new-password"
+                    placeholder="e.g. 4821"
+                    class="field-input h-12 pr-12 text-lg tracking-[0.3em] font-mono"
+                    :class="pinError ? '!border-red-400/70' : ''"
+                  />
+                  <button
+                    type="button"
+                    class="absolute right-1 top-1 w-10 h-10 flex items-center justify-center rounded-lg text-fg-muted active:bg-bg-elevated"
+                    :aria-label="showPin ? 'Hide PIN' : 'Show PIN'"
+                    @click="showPin = !showPin"
+                  >
+                    <Icon :icon="showPin ? 'mdi:eye-off-outline' : 'mdi:eye-outline'" width="20" height="20" />
+                  </button>
+                </div>
+                <p v-if="pinError" class="text-xs text-red-500">Use at least 4 digits, numbers only.</p>
+              </SettingsField>
+            </section>
+
+            <!-- WiFi -->
+            <section class="rounded-3xl bg-bg-panel border border-fg/10 p-5 flex flex-col gap-4">
+              <div class="flex items-center gap-3">
+                <span class="w-7 h-7 rounded-full bg-bg-elevated text-fg-muted text-sm font-semibold flex items-center justify-center shrink-0">3</span>
+                <div class="flex-1 min-w-0">
+                  <h2 class="text-base font-semibold">Guest WiFi QR code</h2>
+                  <p class="text-xs text-fg-muted">Optional · guests scan it to join your WiFi</p>
+                </div>
+                <ToggleSwitch :on="wifiEnabled" label="Guest WiFi QR code" @toggle="wifiEnabled = !wifiEnabled" />
+              </div>
+              <template v-if="wifiEnabled">
+                <SettingsField label="Network name">
+                  <input v-model="wifiSsid" type="text" autocomplete="off" spellcheck="false" placeholder="Your WiFi name (SSID)" class="field-input h-12" />
+                </SettingsField>
+                <SettingsField label="Security">
+                  <div class="segmented compact">
+                    <button
+                      v-for="o in SECURITY_OPTIONS"
+                      :key="o.value"
+                      type="button"
+                      :aria-pressed="wifiSecurity === o.value"
+                      @click="wifiSecurity = o.value"
+                    >{{ o.label }}</button>
+                  </div>
+                </SettingsField>
+                <SettingsField v-if="wifiSecurity !== 'NONE'" label="Password">
+                  <div class="relative">
+                    <input
+                      v-model="wifiPassword"
+                      :type="showWifiPassword ? 'text' : 'password'"
+                      autocomplete="new-password"
+                      placeholder="WiFi password"
+                      class="field-input h-12 pr-12"
+                    />
+                    <button
+                      type="button"
+                      class="absolute right-1 top-1 w-10 h-10 flex items-center justify-center rounded-lg text-fg-muted active:bg-bg-elevated"
+                      :aria-label="showWifiPassword ? 'Hide password' : 'Show password'"
+                      @click="showWifiPassword = !showWifiPassword"
+                    >
+                      <Icon :icon="showWifiPassword ? 'mdi:eye-off-outline' : 'mdi:eye-outline'" width="20" height="20" />
+                    </button>
+                  </div>
+                </SettingsField>
+                <div class="flex items-center gap-3">
+                  <div class="flex-1 min-w-0">
+                    <div class="text-sm font-medium">Hidden network</div>
+                    <div class="field-hint">Turn on if your WiFi doesn’t broadcast its name.</div>
+                  </div>
+                  <ToggleSwitch :on="wifiHidden" label="Hidden network" @toggle="wifiHidden = !wifiHidden" />
+                </div>
+              </template>
+            </section>
+          </div>
+        </div>
       </div>
 
-      <p v-if="error" class="text-sm text-red-400 text-center">{{ error }}</p>
-
-      <!-- Submit -->
-      <button
-        type="button"
-        class="w-full min-h-[3.25rem] btn-touch text-base font-semibold rounded-xl transition-colors"
-        :class="canSubmit ? 'bg-accent text-bg-panel' : 'opacity-40 cursor-not-allowed bg-bg-elevated text-fg'"
-        :disabled="!canSubmit"
-        @click="submit"
-      >
-        <Icon v-if="saving" icon="mdi:loading" class="animate-spin" width="20" height="20" />
-        <span>{{ saving ? 'Saving…' : 'Finish setup' }}</span>
-      </button>
-    </div>
+      <!-- Footer: always visible -->
+      <div class="sticky bottom-0 bg-bg/95 border-t border-fg/10">
+        <div class="max-w-5xl mx-auto px-4 sm:px-8 py-3 flex items-center gap-4">
+          <div class="flex-1 min-w-0 text-sm">
+            <p v-if="error" class="flex items-center gap-2 text-red-500">
+              <Icon icon="mdi:alert-circle-outline" width="18" height="18" class="shrink-0" />
+              <span class="truncate">{{ error }}</span>
+            </p>
+            <p v-else-if="blocker" class="text-fg-muted truncate">{{ blocker }}</p>
+            <p v-else class="text-fg-muted truncate">You can change these later with Factory reset in Settings.</p>
+          </div>
+          <button type="submit" class="btn-touch shrink-0 gap-2 h-12 px-8 text-base font-semibold bg-accent !text-bg" :disabled="!canSubmit">
+            <Icon v-if="saving" icon="mdi:loading" class="animate-spin" width="20" height="20" />
+            <span>{{ saving ? 'Saving…' : 'Finish setup' }}</span>
+            <Icon v-if="!saving" icon="mdi:arrow-right" width="20" height="20" />
+          </button>
+        </div>
+      </div>
+    </form>
   </div>
 </template>

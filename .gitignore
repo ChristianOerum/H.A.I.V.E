@@ -10,3 +10,4 @@ dist
 # Runtime device configuration written by the first-launch setup screen
 config/device.json
 config/preferences.json
+config/scan-pending.json

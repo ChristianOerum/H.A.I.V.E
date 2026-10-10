@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Icon } from '@iconify/vue'
 import { getAdapter } from '~/utils/deviceRegistry'
 
 const entities = useEntitiesStore()
@@ -9,6 +10,7 @@ const entity = computed(() =>
 )
 const adapter = computed(() => (entity.value ? getAdapter(entity.value) : undefined))
 const open = computed(() => !!entity.value && !!adapter.value)
+const unavailable = computed(() => entity.value?.state === 'unavailable')
 
 function close() {
   layout.select(null)
@@ -27,16 +29,27 @@ function close() {
   >
     <div
       v-if="open"
-      class="absolute inset-0 bg-black/30"
+      class="absolute inset-0 z-[15] bg-black/30"
       @pointerdown="close"
     />
   </Transition>
 
   <BottomSheet :open="open" @close="close">
-    <component
-      v-if="entity && adapter"
-      :is="adapter.controls"
-      :entity="entity"
-    />
+    <template v-if="entity && adapter">
+      <div
+        v-if="unavailable"
+        class="mb-4 flex items-center gap-3 rounded-2xl border border-orange-400/40 bg-orange-400/10 px-4 py-3 text-sm"
+      >
+        <Icon icon="mdi:lan-disconnect" width="20" height="20" class="shrink-0 text-orange-400" />
+        <span>This device is unavailable in Home Assistant. Controls will work again once it reconnects.</span>
+      </div>
+      <!-- Keyed so switching devices remounts the controls (flushing any pending debounced change) -->
+      <component
+        :is="adapter.controls"
+        :key="entity.entity_id"
+        :entity="entity"
+        :class="unavailable ? 'opacity-50 pointer-events-none' : ''"
+      />
+    </template>
   </BottomSheet>
 </template>

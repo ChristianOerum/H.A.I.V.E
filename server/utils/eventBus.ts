@@ -11,6 +11,7 @@ export type LiveEvent =
   | { type: 'floorplan' }
   | { type: 'device' }
   | { type: 'preferences' }
+  | { type: 'scan' }
 
 type Subscriber = (e: LiveEvent) => void
 

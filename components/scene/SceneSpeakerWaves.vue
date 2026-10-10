@@ -6,7 +6,7 @@
  */
 import { shallowRef, onMounted, onBeforeUnmount, watch } from 'vue'
 import * as THREE from 'three'
-import { useRenderLoop } from '@tresjs/core'
+import { useLoop } from '@tresjs/core'
 
 const props = defineProps<{
   active: boolean
@@ -234,15 +234,23 @@ onBeforeUnmount(() => {
 let hue = 0
 let env = 0
 
-const { onLoop } = useRenderLoop()
-onLoop(({ delta, elapsed }: { delta: number; elapsed: number }) => {
+// Canvas loop (not the global render loop) so we can request frames: the
+// scene renders on demand and only redraws while this effect is moving.
+const { onBeforeRender } = useLoop()
+const gate = useAmbientGate()
+onBeforeRender(({ elapsed, invalidate }) => {
   const g = group.value
   if (!g) return
-  const dt = Math.min(delta, 0.05)
+  // Stopped and fully faded out — nothing to animate or draw.
+  if (!props.active && env === 0) return
+  const step = gate.step(elapsed)
+  if (!step) return
+  const dt = Math.min(step, 0.05)
 
   // Envelope ramps the whole effect in/out so playback start/stop cross-fades.
   env = Math.min(1, Math.max(0, env + ((props.active ? 1 : -1) * dt) / FADE_TIME))
   g.visible = env > 0.001
+  invalidate()   // also draws the frame that hides it
   if (!g.visible) return
   const fade = env * env * (3 - 2 * env)
 

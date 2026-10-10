@@ -28,20 +28,24 @@ export interface DeviceAdapter {
   controls: Component
 }
 
-const registry = new Map<string, DeviceAdapter>()
+// Several adapters may share a domain (e.g. a washing machine is a `sensor`
+// like any other). Adapters with a `matches` filter take precedence over the
+// domain's catch-all adapter.
+const registry = new Map<string, DeviceAdapter[]>()
 
 export function registerAdapter(adapter: DeviceAdapter) {
-  registry.set(adapter.domain, adapter)
+  const list = registry.get(adapter.domain) ?? []
+  if (!list.includes(adapter)) list.push(adapter)
+  registry.set(adapter.domain, list)
 }
 
 export function getAdapter(entity: HassEntity): DeviceAdapter | undefined {
   const domain = entity.entity_id.split('.')[0]
-  const a = registry.get(domain)
-  if (!a) return undefined
-  if (a.matches && !a.matches(entity)) return undefined
-  return a
+  const list = registry.get(domain)
+  if (!list) return undefined
+  return list.find((a) => a.matches?.(entity)) ?? list.find((a) => !a.matches)
 }
 
 export function allAdapters(): DeviceAdapter[] {
-  return Array.from(registry.values())
+  return Array.from(registry.values()).flat()
 }

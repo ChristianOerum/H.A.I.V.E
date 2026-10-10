@@ -11,18 +11,18 @@ const icon = computed(() =>
       : 'heroicons:moon',
 )
 const label = computed(() =>
-  theme.mode === 'auto' ? 'Cycle' : theme.mode === 'light' ? 'Light' : 'Dark',
+  theme.mode === 'auto' ? 'Auto' : theme.mode === 'light' ? 'Light' : 'Dark',
 )
 </script>
 
 <template>
   <button
-    class="btn-touch text-xs gap-2 px-3 py-1 min-h-touch"
+    class="toolbar-btn"
     :aria-label="`Theme: ${label}`"
-    :title="`Theme: ${label} (tap to cycle)`"
+    :title="`Theme: ${label} (tap to cycle auto / light / dark)`"
     @click="theme.toggle()"
   >
-    <Icon :icon="icon" width="18" height="18" />
+    <Icon :icon="icon" width="20" height="20" />
     <span class="hidden md:inline">{{ label }}</span>
   </button>
 </template>

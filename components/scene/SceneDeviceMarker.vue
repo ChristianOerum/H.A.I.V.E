@@ -1,8 +1,10 @@
 ﻿<script setup lang="ts">
 import { watch, shallowRef, onMounted, onUnmounted } from 'vue'
-import { Object3D, type PointLight, type SpotLight } from 'three'
+import { Object3D, type SpotLight } from 'three'
+import { requestShadowUpdate } from '~/composables/useShadowUpdates'
 import { useTresContext } from '@tresjs/core'
 import { getAdapter } from '~/utils/deviceRegistry'
+import { APPLIANCE_COLORS, detectAppliance, getAppliancePhase, isApplianceRunning, isDryingPhase } from '~/utils/appliance'
 import type { HassEntity } from 'home-assistant-js-websocket'
 import type { DevicePlacement } from '~/stores/layout'
 
@@ -50,53 +52,49 @@ const speakerVolume = computed(() => {
   return typeof level === 'number' ? level : 0.5
 })
 
-// Perceptual brightness curve for the emitted lamp light. HA brightness maps
-// linearly to `visual.intensity` (0–1), but a linear map looks far too bright
-// at low levels — 20% brightness still floods the room. Raising it to a power
-// > 1 makes low settings fall off steeply while leaving full brightness
-// unchanged (1^n = 1), matching how a dimmed bulb actually looks.
-const LAMP_GAMMA = 2.2
-const lampIntensity = computed(() =>
-  Math.pow(Math.max(0, visual.value.intensity), LAMP_GAMMA) * 80 * (props.placement.brightnessMultiplier ?? 1),
+// ── Washing machine / tumble dryer ───────────────────────────────────────────
+// Detected from the marker icon override or the entity name; the phase drives
+// the drum / bubbles / heat effect. A washer-dryer switches to the heat look
+// (and the dryer colour, unless a custom one is set) while drying.
+const appliance = computed(() => detectAppliance(props.entity, props.placement.icon))
+const appliancePhase = computed(() => (appliance.value ? getAppliancePhase(props.entity) : 'off'))
+const applianceDrying = computed(() => !!appliance.value && isDryingPhase(appliance.value, appliancePhase.value))
+const applianceColor = computed(() =>
+  props.placement.color || APPLIANCE_COLORS[applianceDrying.value ? 'dryer' : (appliance.value ?? 'washer')],
 )
 
-// ── Lamp point light shadow config ───────────────────────────────────────────
-const lightRef = shallowRef<PointLight | null>(null)
-watch(lightRef, (light) => {
-  if (!light) return
-  // Higher-res shadow map so the thin (0.12 m) walls are a precise occluder;
-  // this lets normalBias stay very low without introducing shadow acne.
-  light.shadow.mapSize.width  = 2048
-  light.shadow.mapSize.height = 2048
-  light.shadow.camera.near    = 0.1
-  light.shadow.camera.far     = 8
-  light.shadow.bias           = -0.0005
-  // The wall material casts with shadowSide=FrontSide, so the near wall face is
-  // recorded and the far (exterior) face stays fully shadowed a full wall
-  // thickness back — no light bleeds through. normalBias can stay moderate to
-  // avoid acne on the lit interior surfaces.
-  light.shadow.normalBias     = 0.02
-})
+// Lamp point lights live in SceneLampLights (a shared pool), so toggling a lamp
+// never changes the scene's light count and never recompiles shaders.
 
 // ── TV spot light — directional emission in furniture facing direction ────────
+// Mounted for as long as the screen is placed and dimmed to 0 while it's off,
+// for the same reason: a stable light count means no shader recompiles.
 const { scene } = useTresContext()
+const quality = useGraphicsQuality()
 const tvTarget = new Object3D()
 const tvSpotRef = shallowRef<SpotLight | null>(null)
 
 onMounted(() => scene.value.add(tvTarget))
-onUnmounted(() => scene.value.remove(tvTarget))
+onUnmounted(() => {
+  scene.value.remove(tvTarget)
+  requestShadowUpdate()
+})
 
-watch(tvSpotRef, (spot) => {
+watch([tvSpotRef, () => quality.settings.value.lampShadowSize], ([spot, size]) => {
   if (!spot) return
-  // Shadow config matches the lamp point light: a high-res map plus very low
-  // normalBias keeps the beam anchored at the wall base so TV light can't
-  // bleed into neighbouring rooms along the floor edge.
-  spot.shadow.mapSize.width  = 2048
-  spot.shadow.mapSize.height = 2048
+  // Shadow config matches the lamp point lights: very low normalBias keeps the
+  // beam anchored at the wall base so TV light can't bleed into neighbouring
+  // rooms along the floor edge.
+  if (spot.shadow.mapSize.x !== size) {
+    spot.shadow.mapSize.set(size, size)
+    spot.shadow.map?.dispose()
+    spot.shadow.map = null
+  }
   spot.shadow.camera.near    = 0.1
   spot.shadow.camera.far     = 8
   spot.shadow.bias           = -0.0005
   spot.shadow.normalBias     = 0.02
+  requestShadowUpdate()
 })
 
 watch([tvSpotRef, effectiveLightPos, () => props.lightFacing], () => {
@@ -112,32 +110,23 @@ watch([tvSpotRef, effectiveLightPos, () => props.lightFacing], () => {
   )
   tvTarget.updateMatrixWorld()
   spot.target = tvTarget
+  requestShadowUpdate()
 }, { immediate: true })
 </script>
 
 <template>
   <TresGroup :position="effectiveLightPos">
-    <!-- Point light — high decay keeps light contained inside the room walls -->
-    <TresPointLight
-      v-if="visual.active && entity.entity_id.startsWith('light.')"
-      ref="lightRef"
-      :color="visual.color"
-      :intensity="lampIntensity"
-      :distance="8"
-      :decay="2"
-      :cast-shadow="true"
-    />
     <!-- Directional spot light for TV / media player — emits in furniture facing direction -->
     <TresSpotLight
-      v-if="visual.active && isScreen && placement.lightSourceFurnitureId"
+      v-if="isScreen && placement.lightSourceFurnitureId"
       ref="tvSpotRef"
       color="#ffffff"
-      :intensity="visual.intensity * 20"
+      :intensity="visual.active ? visual.intensity * 20 : 0"
       :angle="Math.PI / 2.5"
       :penumbra="0.5"
       :distance="8"
       :decay="1.5"
-      :cast-shadow="true"
+      :cast-shadow="quality.settings.value.shadows"
     />
 
     <!-- Speaker — colour ripples + floating music notes while playing -->
@@ -147,6 +136,15 @@ watch([tvSpotRef, effectiveLightPos, () => props.lightFacing], () => {
       :origin="effectiveLightPos"
       :color="placement.color || visual.color"
       :volume="speakerVolume"
+    />
+
+    <!-- Washer / dryer — spinning drum with soap bubbles or heat wisps while running -->
+    <SceneApplianceEffect
+      v-if="appliance"
+      :active="isApplianceRunning(appliancePhase)"
+      :phase="appliancePhase"
+      :drying="applianceDrying"
+      :color="applianceColor"
     />
   </TresGroup>
 </template>

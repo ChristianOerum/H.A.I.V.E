@@ -8,7 +8,7 @@
 import { Vector3 } from 'three'
 
 const IDLE_TIMEOUT_MS = 30_000
-const LERP_ALPHA = 0.015   // smoothness per frame
+const LERP_ALPHA = 0.015   // smoothness per 60 Hz frame
 const SNAP_DISTANCE = 0.01 // snap threshold in world units
 
 const { camera, renderer } = useTresContext()
@@ -56,14 +56,19 @@ onUnmounted(() => {
   document.removeEventListener('pointerdown', onUserInteraction, { capture: true })
 })
 
-// Smooth return animation — runs every frame when active.
-const { onLoop } = useRenderLoop()
+// Smooth return animation — runs every frame when active. Uses the canvas loop
+// so it can request frames (the scene renders on demand).
+const { onBeforeRender } = useLoop()
 
-onLoop(() => {
+onBeforeRender(({ delta, invalidate }) => {
   if (!isReturning.value || !savedView.value || !camera.value) return
 
   _target.set(...savedView.value.position)
-  camera.value.position.lerp(_target, LERP_ALPHA)
+  // LERP_ALPHA is tuned per 60 Hz frame; scale it so the return takes the
+  // same time on a device that renders slower.
+  const alpha = 1 - Math.pow(1 - LERP_ALPHA, Math.min(delta, 0.1) * 60)
+  camera.value.position.lerp(_target, alpha)
+  invalidate()
 
   if (camera.value.position.distanceTo(_target) < SNAP_DISTANCE) {
     camera.value.position.copy(_target)

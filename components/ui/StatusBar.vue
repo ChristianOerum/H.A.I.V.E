@@ -28,125 +28,141 @@ const weatherLabel = computed(() =>
   weather.condition.value.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
 )
 
-const statusColor = computed(() => {
-  switch (entities.status) {
-    case 'connected': return 'bg-accent'
-    case 'connecting': return 'bg-yellow-400 animate-pulse'
-    case 'disconnected': return 'bg-orange-400'
-    case 'error': return 'bg-red-500'
-    default: return 'bg-fg-muted'
-  }
-})
+const STATUS = {
+  idle:         { dot: 'bg-fg-muted',                 label: 'Starting…' },
+  connecting:   { dot: 'bg-yellow-400 animate-pulse', label: 'Connecting…' },
+  connected:    { dot: 'bg-emerald-400',              label: 'Connected' },
+  disconnected: { dot: 'bg-orange-400 animate-pulse', label: 'Reconnecting…' },
+  error:        { dot: 'bg-red-500',                  label: 'Offline' },
+} as const
+const status = computed(() => STATUS[entities.status] ?? STATUS.idle)
+
+const WALL_LABELS = { solid: 'Walls', dimmed: 'Dimmed', ghost: 'Ghost' } as const
 
 const { authEnabled } = useDeviceConfig()
 const showKeypad = ref(false)
 const openKeypad = () => { if (!unlocked.value) showKeypad.value = true }
 const onKeypadClose = () => { showKeypad.value = false }
+
+// Locked controls stay visible (so people know they exist) but a tap asks
+// for the PIN instead of silently doing nothing.
+function onGatedClick(e: MouseEvent) {
+  if (unlocked.value) return
+  e.stopPropagation()
+  e.preventDefault()
+  openKeypad()
+}
 </script>
 
 <template>
-  <div class="absolute top-0 left-0 right-0 h-14 flex items-center justify-between px-6 pointer-events-none">
-    <div class="flex items-center gap-3 pointer-events-auto">
-      <div class="flex items-baseline gap-2 mr-2">
-        <span class="text-sm font-semibold tracking-[0.2em] text-accent">H.A.I.V.E.</span>
-        <span class="text-[10px] text-fg-muted hidden sm:inline">Home Assistant Interactive Visual Environment</span>
+  <div class="absolute top-0 left-0 right-0 z-10 flex items-start justify-between gap-3 px-4 sm:px-6 pt-3 pointer-events-none">
+    <!-- Brand + connection -->
+    <div class="flex items-center gap-3 pointer-events-auto min-h-touch">
+      <span class="text-sm font-semibold tracking-[0.2em] text-accent">H.A.I.V.E.</span>
+      <div
+        class="flex items-center gap-2 rounded-full px-2.5 py-1 text-xs"
+        :class="entities.status === 'connected' ? 'text-fg-muted' : 'surface text-fg'"
+        :title="entities.error || status.label"
+      >
+        <span class="w-2 h-2 rounded-full" :class="status.dot" />
+        <span :class="entities.status === 'connected' ? 'hidden lg:inline' : ''">{{ status.label }}</span>
       </div>
-      <div class="w-3 h-3 rounded-full" :class="statusColor" :title="entities.status" />
-      <span class="text-sm text-fg/80">{{ entities.status }}</span>
       <span
         v-if="isMock()"
-        class="text-xs px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-300 border border-yellow-500/30"
+        class="text-[10px] font-semibold tracking-wider px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-500 border border-yellow-500/30"
+        title="Running against built-in sample devices (?mock=1)"
       >MOCK</span>
-      <span v-if="entities.error" class="text-xs text-red-400">{{ entities.error }}</span>
     </div>
-    <div class="flex items-center gap-1.5 pointer-events-auto">
 
-      <!-- ThemeToggle — always visible, dimmed when locked -->
-      <div :class="unlocked ? '' : 'opacity-30 pointer-events-none select-none'">
+    <!-- Toolbar -->
+    <div class="surface flex items-center gap-0.5 p-1 rounded-2xl pointer-events-auto">
+      <!-- Display toggles: visible to everyone, PIN-gated when locked -->
+      <div
+        class="flex items-center gap-0.5"
+        :class="unlocked ? '' : 'opacity-50'"
+        :title="unlocked ? undefined : 'Locked — tap to enter PIN'"
+        @click.capture="onGatedClick"
+      >
         <ThemeToggle />
+
+        <button
+          class="toolbar-btn"
+          :aria-pressed="weather.enabled.value"
+          :title="weather.enabled.value ? 'Weather effects on — tap to turn off' : 'Weather effects off — tap to turn on'"
+          @click="weather.toggle()"
+        >
+          <Icon :icon="weather.enabled.value ? weatherIcon : 'mdi:weather-cloudy-remove'" width="20" height="20" />
+          <span class="hidden md:inline">Weather</span>
+        </button>
+
+        <!-- Mock-only weather cycle — step through conditions for testing -->
+        <button
+          v-if="isMock()"
+          class="toolbar-btn"
+          :title="`Test weather: ${weatherLabel} — tap to cycle`"
+          @click="weather.cycleCondition()"
+        >
+          <Icon icon="mdi:refresh" width="20" height="20" />
+          <span class="hidden md:inline">{{ weatherLabel }}</span>
+        </button>
+
+        <button
+          class="toolbar-btn"
+          :aria-pressed="theme.wallOpacityMode !== 'solid'"
+          :title="`Walls: ${theme.wallOpacityMode} — tap to cycle solid / dimmed / ghost`"
+          @click="theme.cycleWallOpacity()"
+        >
+          <Icon
+            :icon="theme.wallOpacityMode === 'solid'
+              ? 'mdi:wall'
+              : theme.wallOpacityMode === 'dimmed'
+                ? 'mdi:circle-half-full'
+                : 'mdi:circle-outline'"
+            width="20"
+            height="20"
+          />
+          <span class="hidden md:inline">{{ WALL_LABELS[theme.wallOpacityMode] }}</span>
+        </button>
+
+        <!-- Day cycle demo — hidden; keep for future use -->
+        <button
+          v-if="false"
+          class="toolbar-btn"
+          :aria-pressed="theme.isSimulating"
+          :title="theme.isSimulating ? 'Stop day simulation' : 'Simulate 24h day cycle (72s)'"
+          @click="theme.startDaySimulation()"
+        >
+          <Icon :icon="theme.isSimulating ? 'mdi:stop-circle-outline' : 'mdi:weather-sunset'" width="20" height="20" />
+        </button>
       </div>
 
-      <!-- Weather effects — toggle all in-scene weather visuals on/off -->
-      <button
-        class="btn-touch !px-3 gap-2 text-xs"
-        :class="[
-          weather.enabled.value ? 'text-fg' : 'text-fg-muted',
-          unlocked ? '' : 'opacity-30 pointer-events-none select-none',
-        ]"
-        :title="weather.enabled.value ? 'Weather effects: on — click to disable' : 'Weather effects: off — click to enable'"
-        @click="weather.toggle()"
-      >
-        <Icon :icon="weather.enabled.value ? weatherIcon : 'mdi:weather-cloudy-alert'" width="18" height="18" />
-        <span class="hidden md:inline">{{ weather.enabled.value ? 'Weather' : 'Weather off' }}</span>
-      </button>
+      <template v-if="unlocked">
+        <div class="w-px h-6 bg-fg/10 mx-1" />
+        <SaveViewButton />
+        <button
+          class="toolbar-btn"
+          :aria-pressed="fp.editMode"
+          title="Edit floorplan, devices and preferences"
+          @click="fp.toggleEditMode()"
+        >
+          <Icon icon="mdi:cog-outline" width="20" height="20" />
+          <!-- Fixed label: changing its width would shift the right-aligned toolbar -->
+          <span class="hidden md:inline">Settings</span>
+        </button>
+      </template>
 
-      <!-- Mock-only weather cycle — step through conditions for testing -->
-      <button
-        v-if="isMock()"
-        class="btn-touch !px-3 gap-2 text-xs"
-        :class="unlocked ? '' : 'opacity-30 pointer-events-none select-none'"
-        :title="`Test weather: ${weatherLabel} — click to cycle`"
-        @click="weather.cycleCondition()"
-      >
-        <Icon :icon="weatherIcon" width="18" height="18" />
-        <span class="hidden md:inline">{{ weatherLabel }}</span>
-      </button>
-
-      <!-- Day cycle demo — hidden; keep for future use -->
-      <button
-        v-if="false"
-        class="btn-touch !px-3 gap-2 text-xs"
-        :class="theme.isSimulating ? 'text-accent border border-accent/50' : 'text-fg-muted'"
-        :title="theme.isSimulating ? 'Stop day simulation' : 'Simulate 24h day cycle (72s)'"
-        @click="theme.startDaySimulation()"
-      >
-        <Icon :icon="theme.isSimulating ? 'mdi:stop-circle-outline' : 'mdi:weather-sunset'" width="18" height="18" />
-      </button>
-
-      <!-- Walls — always visible, dimmed when locked -->
-      <button
-        class="btn-touch !px-3 gap-2 text-xs"
-        :class="[
-          theme.wallOpacityMode !== 'solid' ? 'text-accent border border-accent/50' : 'text-fg-muted',
-          unlocked ? '' : 'opacity-30 pointer-events-none select-none',
-        ]"
-        :title="`Walls: ${theme.wallOpacityMode} — click to cycle`"
-        @click="theme.cycleWallOpacity()"
-      >
-        <Icon
-          :icon="theme.wallOpacityMode === 'solid'
-            ? 'mdi:circle'
-            : theme.wallOpacityMode === 'dimmed'
-              ? 'mdi:circle-half-full'
-              : 'mdi:circle-outline'"
-          width="18"
-          height="18"
-        />
-        <span class="hidden md:inline">Walls</span>
-      </button>
-
-      <!-- SaveViewButton — hidden when locked -->
-      <SaveViewButton v-if="unlocked" />
-
-      <!-- Edit floorplan — hidden when locked -->
-      <button
-        v-if="unlocked"
-        class="btn-touch !px-3 text-xs"
-        :class="fp.editMode ? 'text-accent border border-accent/50' : 'text-fg-muted'"
-        @click="fp.toggleEditMode()"
-        title="Edit floorplan"
-      ><Icon icon="mdi:cog" width="18" height="18" /></button>
-
-      <!-- Lock / unlock button — only shown when auth is enabled -->
-      <button
-        v-if="authEnabled"
-        class="btn-touch !px-3 text-xs transition-colors"
-        :class="unlocked ? 'text-accent border border-accent/50' : 'text-fg'"
-        :title="unlocked ? 'Lock controls' : 'Unlock controls'"
-        @click="unlocked ? lock() : openKeypad()"
-      >
-        <Icon :icon="unlocked ? 'mdi:lock-open-outline' : 'mdi:lock-outline'" width="18" height="18" />
-      </button>
+      <template v-if="authEnabled">
+        <div class="w-px h-6 bg-fg/10 mx-1" />
+        <button
+          class="toolbar-btn"
+          :class="unlocked ? 'text-accent' : 'text-fg'"
+          :title="unlocked ? 'Lock controls' : 'Unlock controls'"
+          @click="unlocked ? lock() : openKeypad()"
+        >
+          <Icon :icon="unlocked ? 'mdi:lock-open-variant-outline' : 'mdi:lock-outline'" width="20" height="20" />
+          <span class="hidden md:inline">{{ unlocked ? 'Lock' : 'Unlock' }}</span>
+        </button>
+      </template>
     </div>
   </div>
 

@@ -138,6 +138,20 @@ html.light {
   body.kiosk, body.kiosk * {
     cursor: none !important;
   }
+
+  /* Keyboard focus ring — invisible to touch users, but keeps the UI
+     navigable when a keyboard is attached (desktop browsers, setup). */
+  :focus-visible {
+    outline: 2px solid rgb(var(--accent));
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 }
 
 @layer components {
@@ -152,6 +166,65 @@ html.light {
   .btn-touch span {
     line-height: 1;
     text-box: trim-both cap alphabetic;
+  }
+  .btn-touch:disabled {
+    @apply opacity-40 pointer-events-none;
+  }
+
+  /* Floating surface used for toolbars, toasts and banners over the 3D scene.
+     Deliberately no backdrop-filter: blurring over a live WebGL canvas forces
+     a full recomposite every frame, which is too expensive on the Pi. */
+  .surface {
+    @apply bg-bg-panel/90 border border-fg/10 shadow-lg;
+  }
+
+  /* Borderless button that lives inside a .surface toolbar pill. */
+  .toolbar-btn {
+    @apply min-h-touch min-w-touch flex items-center justify-center gap-2 px-3 rounded-xl text-xs font-medium text-fg-muted active:bg-bg-elevated transition-colors leading-none select-none;
+  }
+  .toolbar-btn[aria-pressed='true'] {
+    @apply bg-accent/15 text-accent;
+  }
+  .toolbar-btn span {
+    line-height: 1;
+    text-box: trim-both cap alphabetic;
+  }
+
+  /* Small uppercase section label used inside sheets and panels. */
+  .section-label {
+    @apply text-[11px] font-semibold uppercase tracking-wider text-fg-muted;
+  }
+
+  /* ── Settings form primitives ── */
+  .field-label {
+    @apply text-xs font-medium text-fg-muted;
+  }
+  .field-hint {
+    @apply text-[11px] leading-snug text-fg-muted/80;
+  }
+  .field-input {
+    @apply h-10 w-full min-w-0 rounded-lg bg-bg border border-fg/10 px-3 text-sm text-fg outline-none transition-colors placeholder:text-fg-muted/60 focus:border-accent/60;
+  }
+  select.field-input {
+    @apply pr-8;
+  }
+  /* Small text-style action next to a field label ("Reset", "Show all") */
+  .field-action {
+    @apply text-[11px] font-medium text-accent px-1.5 py-0.5 -my-0.5 rounded active:bg-accent/10;
+  }
+
+  /* Segmented control: a row of mutually exclusive options. */
+  .segmented {
+    @apply flex gap-1 p-1 rounded-xl bg-bg-elevated/60;
+  }
+  .segmented > button {
+    @apply flex-1 min-h-touch flex items-center justify-center gap-2 px-3 rounded-lg text-sm font-medium text-fg-muted transition-colors;
+  }
+  .segmented > button[aria-pressed='true'] {
+    @apply bg-bg-panel text-fg shadow;
+  }
+  .segmented.compact > button {
+    @apply min-h-[2.25rem] text-xs px-2;
   }
 }
 

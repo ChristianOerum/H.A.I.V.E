@@ -5,6 +5,17 @@ import SensorControls from '~/components/controls/SensorControls.vue'
 import MediaPlayerControls from '~/components/controls/MediaPlayerControls.vue'
 import CoverControls from '~/components/controls/CoverControls.vue'
 import CameraControls from '~/components/controls/CameraControls.vue'
+import ApplianceControls from '~/components/controls/ApplianceControls.vue'
+import {
+  APPLIANCE_COLORS,
+  APPLIANCE_DOMAINS,
+  APPLIANCE_ICONS,
+  detectAppliance,
+  getAppliancePhase,
+  isApplianceRunning,
+  phaseLabel,
+  type ApplianceKind,
+} from '~/utils/appliance'
 import { registerAdapter, type DeviceAdapter } from '~/utils/deviceRegistry'
 
 const light: DeviceAdapter = {
@@ -100,6 +111,32 @@ const camera: DeviceAdapter = {
   }),
 }
 
+// Washing machines / tumble dryers ride on whichever domain their integration
+// uses, so one appliance adapter is registered per candidate domain.
+function applianceAdapter(domain: string, kind: ApplianceKind): DeviceAdapter {
+  return {
+    domain,
+    icon: APPLIANCE_ICONS[kind],
+    controls: ApplianceControls,
+    matches: (e) => detectAppliance(e) === kind,
+    getDisplayState: (e) => {
+      const phase = getAppliancePhase(e)
+      const running = isApplianceRunning(phase)
+      return {
+        color: APPLIANCE_COLORS[kind],
+        intensity: running ? 1 : 0.3,
+        label: phaseLabel(kind, phase),
+        active: running,
+      }
+    },
+  }
+}
+
+const appliances: DeviceAdapter[] = APPLIANCE_DOMAINS.flatMap((d) => [
+  applianceAdapter(d, 'washer'),
+  applianceAdapter(d, 'dryer'),
+])
+
 export function registerBuiltInAdapters() {
-  ;[light, sw, climate, sensor, mediaPlayer, cover, camera].forEach(registerAdapter)
+  ;[light, sw, climate, sensor, mediaPlayer, cover, camera, ...appliances].forEach(registerAdapter)
 }

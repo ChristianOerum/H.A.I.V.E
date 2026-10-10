@@ -2,6 +2,7 @@
 import { Icon } from '@iconify/vue'
 
 const { saveView, toggleLock, isLocked } = useCameraView()
+const toast = useToast()
 
 const saveFlash = ref(false)
 const showDropdown = ref(false)
@@ -54,6 +55,7 @@ function onWindowUp() {
   clearHoldTimer()
   if (!swiped && !holdFired) {
     saveView()
+    toast.success('View saved — the camera returns here after 30 s idle', 'mdi:camera-iris')
     saveFlash.value = true
     setTimeout(() => (saveFlash.value = false), 1200)
   }
@@ -104,6 +106,7 @@ function onPointerDown(e: PointerEvent) {
 
 function doToggleLock() {
   toggleLock()
+  toast.show(isLocked.value ? 'Camera locked in place' : 'Camera unlocked', 'info', isLocked.value ? 'mdi:lock' : 'mdi:lock-open-variant')
   showDropdown.value = false
   lockItemActive.value = false
 }
@@ -136,22 +139,23 @@ const label = computed(() => (saveFlash.value ? 'Saved!' : 'Save View'))
     <!-- Locked state: only the lock icon, tap to unlock -->
     <button
       v-if="isLocked"
-      class="btn-touch !px-3 text-xs select-none text-orange-400 border border-orange-400/50"
+      class="toolbar-btn !text-orange-400 bg-orange-400/10"
       title="Camera locked — tap to unlock"
       @click="doToggleLock"
     >
-      <Icon icon="mdi:lock" width="18" height="18" />
+      <Icon icon="mdi:camera-lock" width="20" height="20" />
+      <span class="hidden md:inline">Locked</span>
     </button>
 
     <!-- Normal state: camera icon + label with hold/swipe behaviour -->
     <button
       v-else
-      class="btn-touch !px-3 gap-2 text-xs select-none touch-none"
-      :class="saveFlash ? 'text-accent border border-accent/50' : 'text-fg-muted'"
+      class="toolbar-btn touch-none"
+      :aria-pressed="saveFlash"
       title="Tap to save view · Hold for options · Swipe down to lock"
       @pointerdown="onPointerDown"
     >
-      <Icon icon="mdi:camera-iris" width="18" height="18" />
+      <Icon :icon="saveFlash ? 'mdi:check' : 'mdi:camera-iris'" width="20" height="20" />
       <span class="hidden md:inline">{{ label }}</span>
     </button>
 

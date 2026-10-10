@@ -111,7 +111,7 @@ export interface FloorplanFurnitureGroup {
 
 export type FloorplanItemType = 'room' | 'furniture'
 export interface FloorplanSelection { type: FloorplanItemType; id: string }
-export type FloorplanEditorTab = 'rooms' | 'furniture' | 'devices' | 'preferences'
+export type FloorplanEditorTab = 'rooms' | 'furniture' | 'devices' | 'preferences' | 'system'
 
 function uid() {
   return crypto.randomUUID()
@@ -400,6 +400,16 @@ export const useFloorplanStore = defineStore('floorplan', {
     updateOpening(id: string, patch: Partial<FloorplanOpening>) {
       const o = this.openings.find((o) => o.id === id)
       if (o) { this._push(); Object.assign(o, patch); this.dirty = true }
+    },
+
+    /** Adds rooms and openings from a phone scan as one undoable step. */
+    importScannedRooms(rooms: FloorplanRoom[], openings: FloorplanOpening[]) {
+      if (!rooms.length) return
+      this._push()
+      this.rooms.push(...rooms)
+      this.openings.push(...openings)
+      this.dirty = true
+      this.selection = { type: 'room', id: rooms[0].id }
     },
 
     // ---- Furniture ----

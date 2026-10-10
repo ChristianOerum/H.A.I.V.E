@@ -1,6 +1,16 @@
 <script setup lang="ts">
+import { Icon } from '@iconify/vue'
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Mode = 'select' | 'draw' | 'door' | 'window' | 'erase'
+
+const TOOLS: { id: Mode; label: string; icon: string; key: string }[] = [
+  { id: 'select', label: 'Select', icon: 'mdi:cursor-default-outline', key: 'S' },
+  { id: 'draw', label: 'Draw room', icon: 'mdi:vector-polygon', key: 'D' },
+  { id: 'door', label: 'Door', icon: 'mdi:door', key: 'O' },
+  { id: 'window', label: 'Window', icon: 'mdi:window-closed-variant', key: 'W' },
+  { id: 'erase', label: 'Erase', icon: 'mdi:eraser', key: 'E' },
+]
 
 const fp = useFloorplanStore()
 
@@ -704,46 +714,31 @@ function roomStroke(id: string) {
     leave-to-class="opacity-0"
   >
     <div
-      v-if="fp.editMode && fp.editorTab !== 'furniture' && fp.editorTab !== 'devices' && fp.editorTab !== 'preferences'"
-      class="absolute inset-0 right-80 z-10 bg-bg flex flex-col select-none"
+      v-if="fp.editMode && fp.editorTab === 'rooms'"
+      class="absolute inset-0 right-96 z-10 bg-bg flex flex-col select-none"
       :class="mode === 'draw' ? 'cursor-crosshair' : mode === 'erase' ? 'cursor-not-allowed' : 'cursor-default'"
     >
       <!-- ── Toolbar ── -->
-      <div class="shrink-0 flex items-center gap-1 px-3 py-2 border-b border-bg-elevated bg-bg-panel text-xs">
-        <span class="text-fg-muted mr-1 hidden sm:inline">Tool:</span>
-
-        <button
-          v-for="[id, label, key] in [['select','↖ Select','S'],['draw','✏ Draw Room','D'],['door','🚪 Door','O'],['window','🪟 Window','W'],['erase','✕ Erase','E']]"
-          :key="id"
-          class="px-2.5 py-1.5 rounded-md transition-colors font-medium"
-          :class="mode === id
-            ? 'bg-accent/20 text-accent border border-accent/50'
-            : 'text-fg-muted hover:bg-bg-elevated'"
-          @click="mode = id as Mode"
-        >{{ label }} <span class="text-[9px] opacity-50 ml-0.5">{{ key }}</span></button>
-
-        <div class="flex-1" />
-
-        <span v-if="mode === 'draw'" class="text-fg-muted italic hidden sm:inline">
-          {{ drawPoints.length === 0 ? 'Click to place first point' : drawPoints.length < 3 ? `${drawPoints.length} pts — keep clicking` : 'Click first point or Enter to close' }}
+      <div class="shrink-0 flex items-center gap-3 px-3 py-2 border-b border-fg/10 bg-bg-panel">
+        <div class="segmented compact">
+          <button
+            v-for="t in TOOLS"
+            :key="t.id"
+            :aria-pressed="mode === t.id"
+            :title="`${t.label} (${t.key})`"
+            @click="mode = t.id"
+          >
+            <Icon :icon="t.icon" width="18" height="18" />
+            <span class="hidden lg:inline">{{ t.label }}</span>
+          </button>
+        </div>
+        <span class="flex-1 min-w-0 truncate text-xs text-fg-muted hidden md:inline">
+          <template v-if="mode === 'select'">Drag rooms or corners to reshape · tap a door or window to edit it</template>
+          <template v-else-if="mode === 'draw'">{{ drawPoints.length === 0 ? 'Tap to place the first corner' : drawPoints.length < 3 ? `${drawPoints.length} corners — keep tapping` : 'Tap the first corner (or press Enter) to finish' }}</template>
+          <template v-else-if="mode === 'door' || mode === 'window'">Tap a wall to place a {{ mode }}</template>
+          <template v-else>Tap a room, corner, door or window to delete it</template>
         </span>
-        <span v-if="mode === 'door' || mode === 'window'" class="text-fg-muted italic hidden sm:inline">
-          Hover a wall edge, then click to place
-        </span>
-        <span v-if="mode === 'erase'" class="text-fg-muted italic hidden sm:inline">
-          Click room / vertex to delete · click opening to delete
-        </span>
-
-        <div class="w-px h-4 bg-bg-elevated mx-1" />
-
-        <button
-          class="px-2.5 py-1.5 rounded-md text-fg-muted hover:bg-bg-elevated transition-colors"
-          title="Save floorplan"
-          :class="fp.dirty ? 'text-yellow-300' : ''"
-          @click="fp.save()"
-        >{{ fp.dirty ? '● Save' : '✓ Saved' }}</button>
       </div>
-
       <!-- ── SVG Canvas ── -->
       <div class="flex-1 overflow-hidden relative">
         <svg

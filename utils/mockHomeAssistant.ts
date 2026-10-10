@@ -84,6 +84,8 @@ const initial: HassEntities = Object.fromEntries(
       media_artist: 'Test Artist',
       volume_level: 0.4,
     }),
+    entity('sensor.washing_machine', 'wash', { remaining_time: 42, progress: 20, program: 'Cotton 40°' }),
+    entity('sensor.tumble_dryer', 'drying', { remaining_time: 55, progress: 10, program: 'Cupboard dry' }),
     entity('cover.bedroom_blinds', 'open', { current_position: 100 }),
     entity('cover.garage_door', 'closed', { current_position: 0 }),
     entity('camera.front_door', 'idle', { entity_picture: '' }),
@@ -191,6 +193,26 @@ let simulationInterval: ReturnType<typeof setInterval> | null = null
 const WEATHER_CYCLE = ['sunny', 'partlycloudy', 'cloudy', 'rainy', 'pouring', 'snowy']
 let weatherTick = 0
 
+// Laundry programmes the mock washer / dryer loop through, one step per tick
+// (~5s), so every phase of the 3D effect shows up offline.
+const WASHER_CYCLE = ['wash', 'wash', 'wash', 'rinse', 'rinse', 'spin', 'spin', 'finished', 'idle']
+const DRYER_CYCLE = ['drying', 'drying', 'drying', 'drying', 'cooling', 'finished', 'off']
+let laundryTick = 0
+
+function advanceLaundry(id: string, cycle: string[], totalMinutes: number) {
+  if (!state[id]) return
+  const step = laundryTick % cycle.length
+  const runningSteps = cycle.length - 2
+  const done = Math.min(1, step / runningSteps)
+  update(id, {
+    state: cycle[step],
+    attributes: {
+      progress: Math.round(done * 100),
+      remaining_time: Math.round((1 - done) * totalMinutes),
+    },
+  })
+}
+
 /** Start the mock simulation. Safe to call multiple times — only one interval runs at a time. */
 export function startMockSimulation() {
   if (simulationInterval !== null) return
@@ -202,6 +224,9 @@ export function startMockSimulation() {
       const next = (cur + (Math.random() - 0.5) * 0.3).toFixed(1)
       update(id, { state: next })
     }
+    laundryTick++
+    advanceLaundry('sensor.washing_machine', WASHER_CYCLE, 50)
+    advanceLaundry('sensor.tumble_dryer', DRYER_CYCLE, 65)
     weatherTick++
     // Advance the weather condition every ~30s (6 ticks).
     if (weatherTick % 6 === 0 && state['weather.home']) {

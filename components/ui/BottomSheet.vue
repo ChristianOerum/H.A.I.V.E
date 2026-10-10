@@ -45,6 +45,12 @@ watch(() => props.open, (v) => {
   }
 })
 
+function onKey(e: KeyboardEvent) {
+  if (props.open && e.key === 'Escape') emit('close')
+}
+onMounted(() => window.addEventListener('keydown', onKey))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+
 const sheetStyle = computed(() =>
   dragging.value
     ? { transform: `translateY(${dragY.value}px)`, transition: 'none' }
@@ -63,21 +69,34 @@ const sheetStyle = computed(() =>
   >
     <div
       v-if="open"
-      class="absolute left-0 right-0 bottom-0 z-20 bg-bg-panel text-fg border-t border-bg-elevated rounded-t-2xl shadow-2xl max-h-[70%] flex flex-col touch-none"
+      role="dialog"
+      aria-modal="true"
+      class="absolute left-0 right-0 bottom-0 mx-auto w-full max-w-2xl z-20 bg-bg-panel text-fg border border-b-0 border-fg/10 rounded-t-3xl shadow-2xl max-h-[78%] flex flex-col touch-none"
       :style="sheetStyle"
     >
-      <!-- Drag handle: large hit area so it's easy to grab -->
-      <div
-        class="flex justify-center py-3 cursor-grab active:cursor-grabbing select-none"
-        @pointerdown="onDragStart"
-        @pointermove="onDragMove"
-        @pointerup="onDragEnd"
-        @pointercancel="onDragEnd"
-      >
-        <div class="w-14 h-1.5 rounded-full bg-bg-elevated" />
+      <!-- Drag handle row: the whole strip is draggable; close button sits at the right -->
+      <div class="relative h-11 shrink-0">
+        <div
+          class="absolute inset-0 flex justify-center items-center cursor-grab active:cursor-grabbing select-none"
+          @pointerdown="onDragStart"
+          @pointermove="onDragMove"
+          @pointerup="onDragEnd"
+          @pointercancel="onDragEnd"
+        >
+          <div class="w-12 h-1.5 rounded-full bg-fg/20" />
+        </div>
+        <button
+          class="absolute right-2 top-1 w-11 h-11 flex items-center justify-center rounded-full text-fg-muted active:bg-bg-elevated"
+          aria-label="Close"
+          @click="emit('close')"
+        >
+          <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
       </div>
       <!-- Content scrolls; drag is restricted to the handle to avoid scroll conflicts -->
-      <div class="px-6 pb-6 overflow-y-auto">
+      <div class="px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] overflow-y-auto touch-pan-y">
         <slot />
       </div>
     </div>
