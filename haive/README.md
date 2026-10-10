@@ -6,17 +6,26 @@ they all share one layout, one floorplan, one theme and stay in sync live.
 
 ## Install
 
-1. In Home Assistant go to **Settings → Add-ons → Add-on Store**.
+Requires Home Assistant OS or a Supervised install — Container and Core installs
+have no add-on support.
+
+1. In Home Assistant go to **Settings → Apps → Install app** (called
+   **Settings → Add-ons → Add-on Store** on older versions).
 2. Open the ⋮ menu → **Repositories**, and add:
 
    ```
    https://github.com/ChristianOerum/H.A.I.V.E.
    ```
-3. Install **HAIVE**, then **Start** it.
+   If this is blocked with "supervisor needs to be updated first", install the
+   pending Supervisor update under **Settings** and try again.
+3. Refresh the page, open **HAIVE**, click **Install**, then **Start**. Turn on
+   **Start on boot** so it comes back after a restart.
 
 ## Use
 
-Open `http://<home-assistant-ip>:3000/` on any device on your network.
+Open `http://<home-assistant-ip>:3000/` on any device on your network — the same
+address you use for Home Assistant, with port `3000` instead of `8123` (for
+example `http://homeassistant.local:3000/`).
 
 The first screen you open shows a short setup form for optional extras (toolbar
 PIN, WiFi QR). The Home Assistant connection itself is already done — the
@@ -43,6 +52,17 @@ Everything you edit (device placements, floorplan, furniture, theme, PIN, WiFi
 QR) is stored in the add-on's `/data/config` directory, which survives updates
 and restarts. Use **Factory Reset** in the in-app settings to clear the server
 configuration; layout and floorplan data are kept.
+
+## Updating
+
+New versions show up under **Settings → System → Updates**. To check right away,
+use ⋮ → **Check for updates** there. Your layout and settings in `/data/config`
+are kept across updates.
+
+## Troubleshooting
+
+If the app shows **Error** after starting, open its **Log** tab — the reason it
+stopped is printed there. Include the log when reporting an issue.
 
 ## Ports
 
