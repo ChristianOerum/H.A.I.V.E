@@ -1,5 +1,16 @@
 ﻿[
   {
+    "version": "2026.10.0",
+    "date": "2026-10-10",
+    "changes": [
+      "Appliance controls and in-scene appliance effects.",
+      "Room scanning page.",
+      "Redesigned device controls with shared toggles and sliders.",
+      "Lamp lighting, graphics quality setting and shadow updates.",
+      "Connection banner, toasts and new settings panels."
+    ]
+  },
+  {
     "version": "2026.7.1",
     "date": "2026-07-08",
     "changes": [
