@@ -31,7 +31,8 @@ COPY --from=builder /app/.output ./.output
 # Default config, seeded into the add-on's persistent /data on first start.
 COPY --from=builder /app/config ./config.default
 COPY run.sh /run.sh
-RUN chmod +x /run.sh
+# Strip CRLF in case the build context came from a Windows checkout.
+RUN sed -i 's/\r$//' /run.sh && chmod +x /run.sh
 
 ARG BUILD_VERSION=0.0.0
 ARG TARGETARCH

@@ -1,5 +1,12 @@
 ﻿[
   {
+    "version": "2026.10.1",
+    "date": "2026-10-10",
+    "changes": [
+      "Fix add-on failing to start when the image was built from a Windows checkout."
+    ]
+  },
+  {
     "version": "2026.10.0",
     "date": "2026-10-10",
     "changes": [
