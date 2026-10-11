@@ -38,7 +38,7 @@ const visible = computed(() =>
   >
     <div
       v-if="visible"
-      class="absolute bottom-16 left-1/2 -translate-x-1/2 z-20 surface rounded-2xl flex items-center gap-4 pl-4 pr-1 py-1 text-sm pointer-events-auto max-w-[calc(100%-2rem)]"
+      class="absolute bottom-[calc(4rem+env(safe-area-inset-bottom))] inset-x-0 mx-auto w-fit z-[9] surface rounded-2xl flex items-center gap-4 pl-4 pr-1 py-1 text-sm pointer-events-auto max-w-[calc(100%-2rem)]"
     >
       <div class="flex flex-col sm:flex-row sm:items-center gap-x-4 gap-y-1 py-1.5">
       <div class="flex items-center gap-2">

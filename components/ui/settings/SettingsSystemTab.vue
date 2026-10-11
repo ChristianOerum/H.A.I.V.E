@@ -8,26 +8,9 @@ const toast = useToast()
 
 const version = (changelog as { version: string }[])[0]?.version ?? '0.0.0'
 
-// ── Server LAN IP (useful when deployed headless, e.g. as an HA add-on) ──
-const deviceIp = ref<string | null>(null)
-const origin = ref('')
-onMounted(async () => {
-  origin.value = window.location.origin
-  try {
-    deviceIp.value = (await $fetch<{ ip: string | null }>('/api/ip')).ip
-  } catch {
-    deviceIp.value = null
-  }
-})
-
-/** Address to hand to other screens. Falls back to the LAN IP on a local kiosk. */
-const shareUrl = computed(() => {
-  if (!origin.value) return ''
-  const { protocol, hostname, port } = new URL(origin.value)
-  const isLoopback = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]'
-  if (isLoopback && deviceIp.value) return `${protocol}//${deviceIp.value}${port ? `:${port}` : ''}`
-  return origin.value
-})
+// ── Address to hand to other screens (LAN IP instead of localhost / .local) ──
+const { origin: shareUrl, resolve: resolveShareUrl } = useShareOrigin()
+onMounted(resolveShareUrl)
 function copyShareUrl() {
   navigator.clipboard.writeText(shareUrl.value)
     .then(() => toast.success('Address copied', 'mdi:clipboard-check-outline'))

@@ -80,7 +80,7 @@ watch([creds, canvasRef], () => {
     <!-- Floating bottom-left button -->
     <button
       v-if="!open"
-      class="absolute bottom-4 left-4 surface w-12 h-12 rounded-2xl flex items-center justify-center text-fg-muted active:bg-bg-elevated pointer-events-auto z-20"
+      class="absolute bottom-[max(1rem,env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] surface w-12 h-12 rounded-2xl flex items-center justify-center text-fg-muted active:bg-bg-elevated pointer-events-auto z-20"
       aria-label="Show WiFi QR code"
       title="WiFi"
       @click="openSheet"
@@ -122,7 +122,7 @@ watch([creds, canvasRef], () => {
 
           <template v-else-if="creds">
             <div class="bg-white p-3 rounded-xl">
-              <canvas ref="canvasRef" class="block" />
+              <canvas ref="canvasRef" class="block max-w-[min(320px,calc(100vw-5rem))] !h-auto" />
             </div>
 
             <div class="w-full max-w-sm grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">

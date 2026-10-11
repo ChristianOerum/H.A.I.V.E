@@ -31,14 +31,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     >
       <div
         v-if="open"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-4"
         @pointerdown.self="emit('close')"
       >
         <div
           role="dialog"
           aria-modal="true"
           :aria-label="title"
-          class="w-full max-h-[88vh] flex flex-col bg-bg-panel text-fg rounded-3xl border border-fg/10 shadow-2xl overflow-hidden"
+          class="w-full max-h-[calc(100dvh-1.5rem)] sm:max-h-[88dvh] flex flex-col bg-bg-panel text-fg rounded-3xl border border-fg/10 shadow-2xl overflow-hidden"
           :class="WIDTH[size]"
         >
           <div class="flex items-start gap-3 pl-5 pr-2 pt-4 pb-3 shrink-0">

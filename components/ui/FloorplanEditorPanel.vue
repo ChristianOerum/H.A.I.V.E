@@ -26,6 +26,36 @@ const tab = computed({
 // Undo/redo only covers the floorplan (rooms + furniture).
 const showHistory = computed(() => tab.value === 'rooms' || tab.value === 'furniture')
 
+// ── Phone layout: bottom sheet instead of a side panel ──
+// The sheet can be collapsed to its header + tabs so the room editor or 3D
+// scene above it gets most of the screen. Its height is published so those
+// can make room for it.
+const isSidePanel = useMediaQuery('(min-width: 768px)')
+const collapsed = ref(false)
+const panelEl = ref<HTMLElement | null>(null)
+const { width: panelWidth, height: panelHeight } = useElementSize(panelEl, undefined, { box: 'border-box' })
+const { inset, right } = useEditorSheet()
+watchEffect(() => {
+  inset.value = fp.editMode && !isSidePanel.value ? Math.round(panelHeight.value) : 0
+  right.value = fp.editMode && isSidePanel.value ? Math.round(panelWidth.value) : 0
+})
+watch(() => fp.editMode, (open) => { if (!open) collapsed.value = false })
+
+// Grabber: tap toggles, a swipe down collapses and a swipe up expands.
+let grabStartY: number | null = null
+function onGrabDown(e: PointerEvent) {
+  grabStartY = e.clientY
+  ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+}
+function onGrabUp(e: PointerEvent) {
+  if (grabStartY === null) return
+  const dy = e.clientY - grabStartY
+  grabStartY = null
+  if (dy > 24) collapsed.value = true
+  else if (dy < -24) collapsed.value = false
+  else collapsed.value = !collapsed.value
+}
+
 function onKeyDown(e: KeyboardEvent) {
   if (!fp.editMode) return
   const ctrl = e.ctrlKey || e.metaKey
@@ -121,18 +151,35 @@ async function discardAndClose() {
 <template>
   <Transition
     enter-active-class="transition-transform duration-200 ease-out"
-    enter-from-class="translate-x-full"
-    enter-to-class="translate-x-0"
+    enter-from-class="translate-y-full md:translate-y-0 md:translate-x-full"
+    enter-to-class="translate-x-0 translate-y-0"
     leave-active-class="transition-transform duration-150 ease-in"
-    leave-from-class="translate-x-0"
-    leave-to-class="translate-x-full"
+    leave-from-class="translate-x-0 translate-y-0"
+    leave-to-class="translate-y-full md:translate-y-0 md:translate-x-full"
   >
+    <!-- Phones: bottom sheet (collapsible). md and up: full-height right panel. -->
     <div
       v-if="fp.editMode"
-      class="absolute top-0 right-0 h-full w-96 max-w-full bg-bg-panel text-fg border-l border-fg/10 shadow-2xl flex flex-col z-20 pointer-events-auto"
+      ref="panelEl"
+      class="absolute inset-x-0 bottom-0 rounded-t-3xl border-t pb-[env(safe-area-inset-bottom)]
+             md:inset-x-auto md:top-0 md:right-0 md:h-full md:w-96 md:rounded-none md:border-t-0 md:border-l md:pb-0
+             bg-bg-panel text-fg border-fg/10 shadow-2xl flex flex-col z-20 pointer-events-auto"
+      :class="collapsed ? '' : 'h-[62dvh]'"
     >
+      <!-- Grabber (phones only) -->
+      <button
+        class="md:hidden shrink-0 h-6 -mb-2 flex items-center justify-center touch-none"
+        :aria-label="collapsed ? 'Expand settings' : 'Collapse settings'"
+        :aria-expanded="!collapsed"
+        @pointerdown="onGrabDown"
+        @pointerup="onGrabUp"
+        @pointercancel="grabStartY = null"
+      >
+        <span class="w-10 h-1.5 rounded-full bg-fg/20" />
+      </button>
+
       <!-- Header -->
-      <div class="flex items-center gap-1 pl-4 pr-1.5 h-14 shrink-0">
+      <div class="flex items-center gap-1 pl-4 pr-1.5 h-14 [@media(max-height:500px)]:h-11 shrink-0">
         <h2 class="text-base font-semibold">Settings</h2>
         <span v-if="anyDirty" class="ml-2 text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-600 dark:text-yellow-300">Unsaved</span>
         <div class="flex-1" />
@@ -167,9 +214,9 @@ async function discardAndClose() {
           :key="t.id"
           role="tab"
           :aria-selected="tab === t.id"
-          class="relative flex flex-col items-center justify-center gap-0.5 h-14 text-[11px] font-medium transition-colors"
+          class="relative flex flex-col items-center justify-center gap-0.5 h-14 [@media(max-height:500px)]:h-12 text-[11px] font-medium transition-colors"
           :class="tab === t.id ? 'text-accent' : 'text-fg-muted active:text-fg'"
-          @click="tab = t.id"
+          @click="tab = t.id; collapsed = false"
         >
           <span class="relative">
             <Icon :icon="t.icon" width="22" height="22" />
@@ -181,7 +228,7 @@ async function discardAndClose() {
       </nav>
 
       <!-- Body -->
-      <div class="flex-1 overflow-y-auto overscroll-contain p-3">
+      <div class="flex-1 overflow-y-auto overscroll-contain p-3" :class="collapsed ? 'max-md:hidden' : ''">
         <SettingsRoomsTab v-if="tab === 'rooms'" />
         <SettingsFurnitureTab v-else-if="tab === 'furniture'" />
         <SettingsDevicesTab v-else-if="tab === 'devices'" />
@@ -190,7 +237,7 @@ async function discardAndClose() {
       </div>
 
       <!-- Footer: one save for everything -->
-      <div class="shrink-0 px-3 py-3 border-t border-fg/10">
+      <div class="shrink-0 px-3 py-3 [@media(max-height:500px)]:py-2 border-t border-fg/10" :class="collapsed ? 'max-md:hidden' : ''">
         <div v-if="anyDirty" class="flex gap-2">
           <button
             class="btn-touch flex-1 text-sm"

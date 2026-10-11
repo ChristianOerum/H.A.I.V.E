@@ -55,27 +55,27 @@ function onGatedClick(e: MouseEvent) {
 </script>
 
 <template>
-  <div class="absolute top-0 left-0 right-0 z-10 flex items-start justify-between gap-3 px-4 sm:px-6 pt-3 pointer-events-none">
+  <div class="absolute top-0 left-0 right-0 z-10 flex items-start justify-between gap-2 sm:gap-3 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] sm:pl-[max(1.5rem,env(safe-area-inset-left))] sm:pr-[max(1.5rem,env(safe-area-inset-right))] pt-[max(0.75rem,env(safe-area-inset-top))] pointer-events-none">
     <!-- Brand + connection -->
-    <div class="flex items-center gap-3 pointer-events-auto min-h-touch">
-      <span class="text-sm font-semibold tracking-[0.2em] text-accent">H.A.I.V.E.</span>
+    <div class="flex items-center gap-2 sm:gap-3 min-w-0 pointer-events-auto min-h-touch">
+      <span class="hidden sm:inline text-sm font-semibold tracking-[0.2em] text-accent">H.A.I.V.E.</span>
       <div
-        class="flex items-center gap-2 rounded-full px-2.5 py-1 text-xs"
+        class="flex items-center gap-2 min-w-0 rounded-full px-2.5 py-1 text-xs"
         :class="entities.status === 'connected' ? 'text-fg-muted' : 'surface text-fg'"
         :title="entities.error || status.label"
       >
         <span class="w-2 h-2 rounded-full" :class="status.dot" />
-        <span :class="entities.status === 'connected' ? 'hidden lg:inline' : ''">{{ status.label }}</span>
+        <span class="truncate" :class="entities.status === 'connected' ? 'hidden lg:inline' : 'hidden min-[420px]:inline'">{{ status.label }}</span>
       </div>
       <span
         v-if="isMock()"
-        class="text-[10px] font-semibold tracking-wider px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-500 border border-yellow-500/30"
+        class="hidden min-[420px]:inline text-[10px] font-semibold tracking-wider px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-500 border border-yellow-500/30"
         title="Running against built-in sample devices (?mock=1)"
       >MOCK</span>
     </div>
 
     <!-- Toolbar -->
-    <div class="surface flex items-center gap-0.5 p-1 rounded-2xl pointer-events-auto">
+    <div class="surface flex items-center gap-0.5 p-1 rounded-2xl pointer-events-auto shrink-0">
       <!-- Display toggles: visible to everyone, PIN-gated when locked -->
       <div
         class="flex items-center gap-0.5"
@@ -137,7 +137,7 @@ function onGatedClick(e: MouseEvent) {
       </div>
 
       <template v-if="unlocked">
-        <div class="w-px h-6 bg-fg/10 mx-1" />
+        <div class="w-px h-6 bg-fg/10 mx-0.5 sm:mx-1" />
         <SaveViewButton />
         <button
           class="toolbar-btn"
@@ -152,7 +152,7 @@ function onGatedClick(e: MouseEvent) {
       </template>
 
       <template v-if="authEnabled">
-        <div class="w-px h-6 bg-fg/10 mx-1" />
+        <div class="w-px h-6 bg-fg/10 mx-0.5 sm:mx-1" />
         <button
           class="toolbar-btn"
           :class="unlocked ? 'text-accent' : 'text-fg'"

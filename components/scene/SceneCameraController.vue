@@ -7,7 +7,7 @@
  * keeps two-finger panning of the orbit target within the floorplan — the
  * idle return brings a panned target back to the floorplan centre too.
  */
-import { Vector3 } from 'three'
+import { Vector3, type PerspectiveCamera } from 'three'
 
 const IDLE_TIMEOUT_MS = 30_000
 const LERP_ALPHA = 0.015   // smoothness per 60 Hz frame
@@ -16,8 +16,35 @@ const PAN_MARGIN = 2       // metres the orbit target may be panned past the flo
 const PAN_MAX_HEIGHT = 4   // metres the orbit target may be panned above the floor
 
 const fp = useFloorplanStore()
-const { camera, renderer, controls } = useTresContext()
+const { camera, renderer, controls, sizes, invalidate } = useTresContext()
 const { registerSaveCallback, persistView, savedView, isReturning } = useCameraView()
+
+// Portrait screens (phones): a fixed vertical FOV leaves a sliver of a
+// horizontal view, so widen it until the horizontal FOV matches what a square
+// screen gets, up to a limit where the perspective starts to look distorted.
+const BASE_FOV = 45 // matches the TresPerspectiveCamera in SceneRoot
+const MAX_PORTRAIT_FOV = 80
+const DEG = Math.PI / 180
+
+// The settings panel covers part of the canvas: the right edge (side panel) or
+// the bottom (phone sheet). Shift the projection by half of that so the
+// floorplan stays centred in the visible area. Raycasts and marker projection go through the
+// projection matrix, so they follow automatically.
+const { inset: sheetInset, right: panelRight } = useEditorSheet()
+// Explicit sources and the raw camera: the camera ref is deeply reactive, so a
+// watchEffect would track the very properties it writes and loop.
+watch([camera, sizes.width, sizes.height, sheetInset, panelRight], ([camRef, w, h]) => {
+  const cam = toRaw(camRef) as PerspectiveCamera | undefined
+  if (!cam?.isPerspectiveCamera) return
+  const aspect = w && h ? w / h : 1
+  cam.fov = aspect >= 1
+    ? BASE_FOV
+    : Math.min(MAX_PORTRAIT_FOV, 2 * Math.atan(Math.tan((BASE_FOV / 2) * DEG) / aspect) / DEG)
+  if ((sheetInset.value > 0 || panelRight.value > 0) && w && h)
+    cam.setViewOffset(w, h, panelRight.value / 2, sheetInset.value / 2, w, h)
+  else cam.clearViewOffset() // both update the projection matrix
+  invalidate()
+}, { immediate: true })
 
 let idleTimer: ReturnType<typeof setTimeout> | null = null
 const _target = new Vector3()

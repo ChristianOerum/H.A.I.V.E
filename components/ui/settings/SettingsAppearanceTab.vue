@@ -187,7 +187,7 @@ function doImport() {
 
     <SettingsSection title="Display">
       <SettingsField
-        hint="Makes every button and label bigger or smaller on this screen."
+        hint="Makes every button and label bigger or smaller. Phones never go above 100%."
         :resettable="theme.uiScale !== 1"
         reset-label="Reset to 100%"
         @reset="theme.setUiScale(1)"

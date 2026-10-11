@@ -6,19 +6,8 @@ const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
-const origin = ref('')
-
-const isLoopback = (host: string) => host === 'localhost' || host === '127.0.0.1' || host === '[::1]'
-
-/** The address a phone can reach. The kiosk itself usually browses via localhost. */
-async function resolveOrigin(): Promise<string> {
-  if (!isLoopback(location.hostname)) return location.origin
-  try {
-    const { ip } = await $fetch<{ ip: string | null }>('/api/ip')
-    if (ip) return `${location.protocol}//${ip}${location.port ? `:${location.port}` : ''}`
-  } catch { /* fall through */ }
-  return location.origin
-}
+/** The address a phone can reach (not localhost or a .local name). */
+const { origin, resolve: resolveOrigin } = useShareOrigin()
 
 const scanUrl = computed(() => (origin.value ? `${origin.value}/scan` : ''))
 const needsFlag = computed(() => origin.value.startsWith('http:'))

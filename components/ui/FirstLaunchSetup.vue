@@ -67,8 +67,8 @@ const blocker = computed(() => {
 
 // The address other screens should open to join this dashboard. Resolved after
 // mount because it comes from the browser's own location.
-const shareUrl = ref('')
-onMounted(() => { shareUrl.value = window.location.origin })
+const { origin: shareUrl, resolve: resolveShareUrl } = useShareOrigin()
+onMounted(resolveShareUrl)
 
 async function submit() {
   if (!canSubmit.value) return

@@ -70,7 +70,7 @@ const keys = ['1','2','3','4','5','6','7','8','9','','0','DEL'] as const
       @click.self="emit('close')"
     >
       <div
-        class="bg-bg-panel border border-fg/10 rounded-3xl p-6 sm:p-8 w-full max-w-sm shadow-2xl select-none animate-pop-in"
+        class="bg-bg-panel border border-fg/10 rounded-3xl p-6 sm:p-8 w-full max-w-sm max-h-full overflow-y-auto shadow-2xl select-none animate-pop-in"
         :class="shake ? 'animate-shake' : ''"
         role="dialog"
         aria-modal="true"
@@ -138,7 +138,7 @@ const keys = ['1','2','3','4','5','6','7','8','9','','0','DEL'] as const
          bg-fg/5 active:bg-accent/25 active:scale-95
          border border-fg/10 transition
          disabled:opacity-40 disabled:cursor-not-allowed;
-  height: 4.5rem;
+  height: min(4.5rem, 11dvh);
 }
 
 @keyframes shake {

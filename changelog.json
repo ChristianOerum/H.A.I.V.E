@@ -1,5 +1,16 @@
 ﻿[
   {
+    "version": "2026.10.3",
+    "date": "2026-10-11",
+    "changes": [
+      "Works on phones in portrait and landscape: compact toolbar, safe-area aware layout and a 3D view that fits tall screens.",
+      "Settings become a collapsible bottom sheet on phones, and the 3D view recentres beside or above the open settings.",
+      "Room editor: pinch to zoom, two-finger pan and finger-sized corner and wall targets.",
+      "Interface size never goes above 100% on phones, so a large wall-panel setting no longer crowds them.",
+      "The \"Add another screen\" address now uses the host's LAN IP when HAIVE is opened via localhost or a .local name (the add-on reads it from the Supervisor)."
+    ]
+  },
+  {
     "version": "2026.10.2",
     "date": "2026-10-11",
     "changes": [

@@ -96,7 +96,7 @@ const sheetStyle = computed(() =>
         </button>
       </div>
       <!-- Content scrolls; drag is restricted to the handle to avoid scroll conflicts -->
-      <div class="px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] overflow-y-auto touch-pan-y">
+      <div class="px-4 sm:px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] overflow-y-auto touch-pan-y">
         <slot />
       </div>
     </div>

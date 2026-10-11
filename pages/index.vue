@@ -62,7 +62,7 @@ onMounted(async () => {
 
 <template>
   <FirstLaunchSetup v-if="!device.configured.value && !mockMode" @done="onSetupDone" />
-  <div v-else class="relative w-screen h-screen overflow-hidden bg-bg text-fg">
+  <div v-else class="relative w-full h-dvh overflow-hidden bg-bg text-fg">
     <SceneRoot />
     <StatusBar />
     <ClientOnly><WeatherPanel /></ClientOnly>
@@ -74,7 +74,7 @@ onMounted(async () => {
     <FloorplanEditorPanel />
     <DeviceControlPanel />
     <WifiQrButton v-if="!layout.selectedEntityId && !fp.editMode" />
-    <VersionWatermark />
+    <VersionWatermark v-if="!fp.editMode" />
 
     <ClientOnly><MarkerHint /></ClientOnly>
     <ConnectionBanner />

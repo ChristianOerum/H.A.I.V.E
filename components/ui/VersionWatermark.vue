@@ -20,7 +20,7 @@ const open = ref(false)
   <div>
     <!-- Faint watermark, centered at the bottom of the screen -->
     <button
-      class="absolute bottom-1.5 left-1/2 -translate-x-1/2 z-20 pointer-events-auto
+      class="absolute bottom-[max(0.375rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-10 pointer-events-auto
              text-[11px] font-mono tracking-wide text-fg opacity-30 hover:opacity-70
              transition-opacity duration-200 select-none"
       :title="`HAIVE v${version} — tap for changelog`"
@@ -44,7 +44,7 @@ const open = ref(false)
         class="absolute inset-0 z-40 flex items-center justify-center bg-black/40 p-4 pointer-events-auto"
         @pointerdown.self="open = false"
       >
-        <div class="w-full max-w-md max-h-[80vh] flex flex-col bg-bg-panel rounded-2xl shadow-2xl overflow-hidden">
+        <div class="w-full max-w-md max-h-[80dvh] flex flex-col bg-bg-panel rounded-2xl shadow-2xl overflow-hidden">
           <div class="flex items-center justify-between px-5 py-4 border-b border-bg-elevated">
             <div>
               <h2 class="text-lg font-semibold text-fg">Changelog</h2>

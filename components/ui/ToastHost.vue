@@ -12,7 +12,7 @@ const DEFAULT_ICON = {
 
 <template>
   <div
-    class="absolute bottom-6 left-1/2 -translate-x-1/2 z-[60] flex flex-col items-center gap-2 pointer-events-none w-[min(28rem,calc(100%-2rem))]"
+    class="absolute bottom-[calc(1.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-[60] flex flex-col items-center gap-2 pointer-events-none w-[min(28rem,calc(100%-2rem))]"
     role="status"
     aria-live="polite"
   >

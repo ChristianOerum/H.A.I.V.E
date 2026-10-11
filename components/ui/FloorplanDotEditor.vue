@@ -13,6 +13,7 @@ const TOOLS: { id: Mode; label: string; icon: string; key: string }[] = [
 ]
 
 const fp = useFloorplanStore()
+const { inset: sheetInset } = useEditorSheet()
 
 // ─── Tool mode ────────────────────────────────────────────────────────────────
 const mode = ref<Mode>('select')
@@ -59,12 +60,22 @@ function snap(v: number) { return Math.round(v * 4) / 4 }
 function snapPt(x: number, z: number): [number, number] { return [snap(x), snap(z)] }
 
 // ─── Nearest edge detection ───────────────────────────────────────────────────
-const EDGE_HIT = 0.35 // world units
-const DRAW_SNAP = 0.5  // snap radius when drawing near existing vertices
+// Hit radii in world units, never smaller than a fingertip on screen — when
+// zoomed out on a phone 0.35 m is only a few pixels.
+const { width: svgW, height: svgH } = useElementSize(svgEl)
+/** World units per CSS pixel (the SVG letterboxes the view-box: "meet"). */
+const worldPerPx = computed(() =>
+  svgW.value && svgH.value ? Math.max(vbW.value / svgW.value, vbH.value / svgH.value) : 0,
+)
+const FINGER_PX = 16
+const edgeHit = computed(() => Math.max(0.35, FINGER_PX * worldPerPx.value))
+const drawSnap = computed(() => Math.max(0.5, FINGER_PX * worldPerPx.value)) // snap radius when drawing near existing vertices
+const closeHit = computed(() => Math.max(0.6, FINGER_PX * worldPerPx.value)) // tap near the first corner to close
+const vertexHitR = computed(() => Math.max(0.22, 22 * worldPerPx.value))
 
 function findSnapVertex(wx: number, wz: number): [number, number] | null {
   let best: [number, number] | null = null
-  let bestDist = DRAW_SNAP
+  let bestDist = drawSnap.value
   for (const room of fp.rooms) {
     for (const [vx, vz] of room.vertices) {
       const d = Math.hypot(wx - vx, wz - vz)
@@ -114,7 +125,7 @@ function findNearestEdge(wx: number, wz: number) {
       const [bx, bz] = room.vertices[(i + 1) % n]
       const [cx, cz, t] = closestOnSeg(wx, wz, ax, az, bx, bz)
       const d = Math.hypot(wx - cx, wz - cz)
-      if (d >= EDGE_HIT) continue
+      if (d >= edgeHit.value) continue
       // Containing-room edges win their own tier; ties fall back to distance.
       const score = (isContaining ? 0 : 1000) + d
       if (score < bestScore) {
@@ -128,6 +139,7 @@ function findNearestEdge(wx: number, wz: number) {
 
 // ─── Pointer handlers ─────────────────────────────────────────────────────────
 function onSvgMove(e: PointerEvent) {
+  if (onTouchMove(e)) return
   const [wx, wz] = getSvgCoords(e)
 
   if (mode.value === 'draw') {
@@ -168,10 +180,9 @@ function onSvgMove(e: PointerEvent) {
     return
   }
   if (panStart.value) {
-    const el = svgEl.value!
-    const rect = el.getBoundingClientRect()
-    vbX.value = panStart.value.ox - (e.clientX - panStart.value.clientX) / rect.width * vbW.value
-    vbY.value = panStart.value.oy - (e.clientY - panStart.value.clientY) / rect.height * vbH.value
+    // One factor for both axes: the view-box is letterboxed, not stretched.
+    vbX.value = panStart.value.ox - (e.clientX - panStart.value.clientX) * worldPerPx.value
+    vbY.value = panStart.value.oy - (e.clientY - panStart.value.clientY) * worldPerPx.value
     return
   }
   if (mode.value === 'door' || mode.value === 'window') {
@@ -182,7 +193,7 @@ function onSvgMove(e: PointerEvent) {
   }
 }
 
-function onSvgUp(_e: PointerEvent) {
+function onSvgUp() {
   dragVertex.value = null
   dragOpening.value = null
   panStart.value = null
@@ -199,7 +210,7 @@ function onBgPointerDown(e: PointerEvent) {
     // Close polygon if near first point
     if (drawPoints.value.length >= 3) {
       const [fx, fz] = drawPoints.value[0]
-      if (Math.hypot(sx - fx, sz - fz) < 0.6) {
+      if (Math.hypot(sx - fx, sz - fz) < closeHit.value) {
         closePolygon(); return
       }
     }
@@ -230,7 +241,7 @@ function onVertexPointerDown(roomId: string, vtxIdx: number, e: PointerEvent) {
     const [vx, vz] = fp.rooms.find(r => r.id === roomId)!.vertices[vtxIdx]
     if (drawPoints.value.length >= 3) {
       const [fx, fz] = drawPoints.value[0]
-      if (Math.hypot(vx - fx, vz - fz) < 0.6) { closePolygon(); return }
+      if (Math.hypot(vx - fx, vz - fz) < closeHit.value) { closePolygon(); return }
     }
     drawPoints.value.push([vx, vz])
     return
@@ -326,6 +337,73 @@ function onWheel(e: WheelEvent) {
   vbY.value = wz - (wz - vbY.value) * (nH / vbH.value)
   vbW.value = nW
   vbH.value = nH
+}
+
+// ─── Pinch zoom / two-finger pan (touch) ──────────────────────────────────────
+const touchPts = new Map<number, { x: number; y: number }>()
+let pinchPrev: { dist: number; mx: number; my: number } | null = null
+// What the first finger's tap changed, so a quick second finger can take it back.
+let firstTouch: { at: number; history: number; drawPoints: number } | null = null
+const PINCH_UNDO_MS = 350
+
+function pinchState() {
+  const [a, b] = [...touchPts.values()]
+  return { dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 }
+}
+
+// Capture phase: runs before the vertex/room/background handlers.
+function onTouchDownCapture(e: PointerEvent) {
+  if (e.pointerType !== 'touch') return
+  touchPts.set(e.pointerId, { x: e.clientX, y: e.clientY })
+  if (touchPts.size === 1) {
+    firstTouch = { at: performance.now(), history: fp._history.length, drawPoints: drawPoints.value.length }
+    return
+  }
+  // A second finger turns the gesture into a pinch: it must not place, select
+  // or drag anything itself, and the first finger's drag stops.
+  e.stopPropagation()
+  if (touchPts.size !== 2) return
+  if (firstTouch && performance.now() - firstTouch.at < PINCH_UNDO_MS) {
+    if (fp._history.length > firstTouch.history) fp.undo()
+    drawPoints.value.length = Math.min(drawPoints.value.length, firstTouch.drawPoints)
+  }
+  firstTouch = null
+  onSvgUp()
+  hoveredEdge.value = null
+  pinchPrev = pinchState()
+}
+
+function onTouchMove(e: PointerEvent): boolean {
+  if (!touchPts.has(e.pointerId)) return false
+  touchPts.set(e.pointerId, { x: e.clientX, y: e.clientY })
+  if (!pinchPrev || touchPts.size < 2 || !svgW.value || !svgH.value) return !!pinchPrev
+  const next = pinchState()
+  const rect = svgEl.value!.getBoundingClientRect()
+  const scale = 1 / worldPerPx.value
+  // World point under the previous midpoint (view-box centre sits at the element centre).
+  const rcx = rect.left + rect.width / 2
+  const rcy = rect.top + rect.height / 2
+  const wx = vbX.value + vbW.value / 2 + (pinchPrev.mx - rcx) / scale
+  const wz = vbY.value + vbH.value / 2 + (pinchPrev.my - rcy) / scale
+  // Zoom by the finger-spread ratio, within the same limits as the scroll wheel.
+  const fMin = Math.max(6 / vbW.value, 4 / vbH.value)
+  const fMax = Math.min(60 / vbW.value, 42 / vbH.value)
+  const f = Math.min(fMax, Math.max(fMin, pinchPrev.dist / next.dist))
+  const nW = vbW.value * f
+  const nH = vbH.value * f
+  const nScale = Math.min(rect.width / nW, rect.height / nH)
+  // Keep that world point under the new midpoint (this also pans).
+  vbX.value = wx - (next.mx - rcx) / nScale - nW / 2
+  vbY.value = wz - (next.my - rcy) / nScale - nH / 2
+  vbW.value = nW
+  vbH.value = nH
+  pinchPrev = next
+  return true
+}
+
+function onTouchEnd(e: PointerEvent) {
+  touchPts.delete(e.pointerId)
+  if (touchPts.size < 2) pinchPrev = null
 }
 
 // ─── Keyboard shortcuts ───────────────────────────────────────────────────────
@@ -715,7 +793,8 @@ function roomStroke(id: string) {
   >
     <div
       v-if="fp.editMode && fp.editorTab === 'rooms'"
-      class="absolute inset-0 right-96 z-10 bg-bg flex flex-col select-none"
+      class="absolute inset-0 md:right-96 pt-[env(safe-area-inset-top)] z-10 bg-bg flex flex-col select-none"
+      :style="{ bottom: `${sheetInset}px` }"
       :class="mode === 'draw' ? 'cursor-crosshair' : mode === 'erase' ? 'cursor-not-allowed' : 'cursor-default'"
     >
       <!-- ── Toolbar ── -->
@@ -732,7 +811,7 @@ function roomStroke(id: string) {
             <span class="hidden lg:inline">{{ t.label }}</span>
           </button>
         </div>
-        <span class="flex-1 min-w-0 truncate text-xs text-fg-muted hidden md:inline">
+        <span class="flex-1 min-w-0 truncate text-xs text-fg-muted">
           <template v-if="mode === 'select'">Drag rooms or corners to reshape · tap a door or window to edit it</template>
           <template v-else-if="mode === 'draw'">{{ drawPoints.length === 0 ? 'Tap to place the first corner' : drawPoints.length < 3 ? `${drawPoints.length} corners — keep tapping` : 'Tap the first corner (or press Enter) to finish' }}</template>
           <template v-else-if="mode === 'door' || mode === 'window'">Tap a wall to place a {{ mode }}</template>
@@ -743,10 +822,12 @@ function roomStroke(id: string) {
       <div class="flex-1 overflow-hidden relative">
         <svg
           ref="svgEl"
-          class="w-full h-full"
+          class="w-full h-full touch-none"
           :viewBox="vbString"
           @pointermove="onSvgMove"
-          @pointerup="onSvgUp"
+          @pointerup="onSvgUp(); onTouchEnd($event)"
+          @pointercancel="onSvgUp(); onTouchEnd($event)"
+          @pointerdown.capture="onTouchDownCapture"
           @pointerdown="onBgPointerDown"
           @wheel.prevent="onWheel"
         >
@@ -944,6 +1025,19 @@ function roomStroke(id: string) {
             @pointerdown="onVertexPointerDown(v.roomId, v.vtxIdx, $event)"
           />
 
+          <!-- Finger-sized, invisible hit areas over the vertex dots -->
+          <circle
+            v-for="v in allVertices"
+            :key="'hit-' + v.roomId + '-' + v.vtxIdx"
+            :cx="v.x" :cy="v.z"
+            :r="vertexHitR"
+            fill="#000"
+            fill-opacity="0"
+            :pointer-events="mode === 'door' || mode === 'window' ? 'none' : undefined"
+            style="cursor: grab"
+            @pointerdown="onVertexPointerDown(v.roomId, v.vtxIdx, $event)"
+          />
+
           <!-- ── Draw-mode: in-progress polygon ── -->
           <polyline
             v-if="drawPoints.length > 0"
@@ -1011,11 +1105,11 @@ function roomStroke(id: string) {
       </div>
 
       <!-- ── Bottom legend ── -->
-      <div class="shrink-0 flex items-center gap-4 px-4 py-1.5 border-t border-bg-elevated text-[10px] text-fg-muted bg-bg-panel">
-        <span>Scroll to zoom · Drag background to pan</span>
-        <span v-if="mode === 'select'">Drag ● to move vertex · Click room to select · <kbd class="opacity-60">Ctrl</kbd>+click to multi-select · Drag room to move · Del to delete selected</span>
-        <span v-if="mode === 'draw'">Click dots to trace polygon · Enter or click first point to close</span>
-        <span class="flex items-center gap-1">
+      <div class="shrink-0 flex items-center gap-4 px-4 py-1.5 border-t border-bg-elevated text-[10px] text-fg-muted bg-bg-panel whitespace-nowrap overflow-hidden">
+        <span class="truncate">Pinch or scroll to zoom · Drag background to pan</span>
+        <span v-if="mode === 'select'" class="hidden lg:inline">Drag ● to move vertex · Click room to select · <kbd class="opacity-60">Ctrl</kbd>+click to multi-select · Drag room to move · Del to delete selected</span>
+        <span v-if="mode === 'draw'" class="hidden lg:inline">Click dots to trace polygon · Enter or click first point to close</span>
+        <span class="flex items-center gap-1 shrink-0 ml-auto lg:ml-0">
           <span class="inline-block w-3 h-0.5 bg-orange-400 rounded" /> Door
           <span class="inline-block w-3 h-0.5 bg-sky-400 rounded ml-2" /> Window
         </span>

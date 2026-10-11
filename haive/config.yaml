@@ -1,6 +1,6 @@
 name: HAIVE
 slug: haive
-version: "2026.10.2"
+version: "2026.10.3"
 description: 3D Home Assistant interface for touchscreens, phones and wall panels.
 url: https://github.com/ChristianOerum/H.A.I.V.E.
 # Prebuilt multi-arch image (deploy/publish-image.sh|ps1) — Supervisor pulls it
@@ -16,6 +16,9 @@ boot: auto
 # Grants SUPERVISOR_TOKEN + access to http://supervisor/core, which is how HAIVE
 # reaches Home Assistant. Nothing for the user to configure.
 homeassistant_api: true
+# Read-only Supervisor access, used to look up the host's LAN IP for the
+# "Add another screen" address (the container only sees Docker's network).
+hassio_api: true
 ports:
   3000/tcp: 3000
 ports_description:

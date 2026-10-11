@@ -23,6 +23,9 @@ const DEFAULT_UI_SCALE = 1
 const MIN_UI_SCALE = 0.75
 const MAX_UI_SCALE = 1.5
 const BASE_FONT_SIZE_PX = 16
+// The scale is shared by every screen, so one picked for a wall panel would
+// crowd a phone. Small screens never go above 100%.
+const SMALL_SCREEN_QUERY = '(max-width: 639px), (max-height: 500px)'
 
 // ── Colour helpers ────────────────────────────────────────────────────────────
 
@@ -359,6 +362,7 @@ export const useThemeStore = defineStore('theme', {
         }
       }
       this._applyUiScale()
+      window.matchMedia(SMALL_SCREEN_QUERY).addEventListener('change', () => this._applyUiScale())
 
       // Apply immediately with no transition so the page starts in the right state
       this._applyInstant()
@@ -549,7 +553,9 @@ export const useThemeStore = defineStore('theme', {
     /** Apply the current UI scale to the root font-size (rem base). */
     _applyUiScale() {
       if (typeof document === 'undefined') return
-      document.documentElement.style.fontSize = `${BASE_FONT_SIZE_PX * this.uiScale}px`
+      const small = window.matchMedia(SMALL_SCREEN_QUERY).matches
+      const scale = small ? Math.min(this.uiScale, 1) : this.uiScale
+      document.documentElement.style.fontSize = `${BASE_FONT_SIZE_PX * scale}px`
     },
 
     /** Preview a UI scale value live (rounded to the nearest 5%). */
