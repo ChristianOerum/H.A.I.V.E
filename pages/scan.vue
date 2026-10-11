@@ -5,28 +5,47 @@ import type { ScanResult } from '~/utils/scanGeometry'
 import { convertScan } from '~/utils/scanGeometry'
 
 /**
- * Phone AR room scanner (WebXR: Chrome on Android with ARCore).
+ * Phone room scanner, two ways:
  *
- * The user walks around and taps each room's floor corners, plus both sides of
- * every door and window. All rooms in one AR session share a coordinate frame,
- * so they line up with each other. The raw points are posted to /api/scan and
- * the floorplan editor turns them into rooms (utils/scanGeometry.ts).
+ * - AR (WebXR: Chrome on Android with ARCore). The user walks around and taps
+ *   each room's floor corners, plus both sides of every door and window. All
+ *   rooms in one AR session share a coordinate frame, so they line up.
+ * - Aim (iPhones and anything else without WebXR AR). The user holds the phone
+ *   at a known height and aims a crosshair over the camera feed at each floor
+ *   corner; tilt and heading from the motion sensors give the point
+ *   (composables/useAimTracker.ts). "Move" marks the spot the user walks to
+ *   next, which keeps every room in one frame here too. Needs HTTPS, which the
+ *   server provides on its own port (server/plugins/https.ts).
+ *
+ * The raw points are posted to /api/scan and the floorplan editor turns them
+ * into rooms (utils/scanGeometry.ts).
  */
 
 useHead({ title: 'H.A.I.V.E. · Room scan' })
 
 type Pt3 = [number, number, number]
-type Mode = 'corner' | 'door' | 'window'
+type Mode = 'corner' | 'door' | 'window' | 'move'
 type Phase = 'intro' | 'scanning' | 'review' | 'sent'
-type Support = 'checking' | 'ok' | 'insecure' | 'no-xr' | 'no-ar'
-type Action = 'corner' | 'start' | 'opening' | 'room'
+type Support = 'checking' | 'ok' | 'insecure' | 'no-ar'
+type Method = 'ar' | 'aim'
+type Action = 'corner' | 'start' | 'opening' | 'room' | 'move'
 
 const COLORS = { current: 0xfacc15, room: 0x2dd4bf, door: 0xfb923c, window: 0x38bdf8, reticle: 0xffffff }
+const modeIcon: Record<Mode, string> = {
+  corner: 'mdi:vector-square',
+  door: 'mdi:door',
+  window: 'mdi:window-closed-variant',
+  move: 'mdi:walk',
+}
 
 const phase = ref<Phase>('intro')
 const support = ref<Support>('checking')
 const error = ref<string | null>(null)
 const origin = ref('')
+const method = ref<Method>('ar')
+/** This page on the server's HTTPS port, for phones that can't use it over http. */
+const httpsUrl = ref('')
+const isIos = ref(false)
 
 const mode = ref<Mode>('corner')
 const rooms = ref<{ name: string; corners: Pt3[] }[]>([])
@@ -45,13 +64,33 @@ const sending = ref(false)
 
 onMounted(async () => {
   origin.value = location.origin
-  if (!window.isSecureContext) { support.value = 'insecure'; return }
-  if (!navigator.xr) { support.value = 'no-xr'; return }
+  isIos.value = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
   try {
-    support.value = (await navigator.xr.isSessionSupported('immersive-ar')) ? 'ok' : 'no-ar'
-    // Load three.js now: AR must start within a few seconds of the tap on "Start scan".
-    if (support.value === 'ok') THREE = await import('three')
-  } catch {
+    const saved = parseFloat(localStorage.getItem('haive.scanHeight') ?? '')
+    if (saved >= MIN_HEIGHT && saved <= MAX_HEIGHT) phoneHeight.value = saved
+  } catch { /* storage blocked */ }
+
+  if (!window.isSecureContext) {
+    support.value = 'insecure'
+    try {
+      const { httpsPort } = await $fetch<{ httpsPort: number | null }>('/api/ip')
+      if (httpsPort) httpsUrl.value = `https://${location.hostname}:${httpsPort}/scan`
+    } catch { /* older server without HTTPS */ }
+    return
+  }
+  try {
+    if (navigator.xr && (await navigator.xr.isSessionSupported('immersive-ar'))) {
+      method.value = 'ar'
+      support.value = 'ok'
+      // Load three.js now: AR must start within a few seconds of the tap on "Start scan".
+      THREE = await import('three')
+      return
+    }
+  } catch { /* fall through to aim mode */ }
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof navigator.mediaDevices?.getUserMedia === 'function') {
+    method.value = 'aim'
+    support.value = 'ok'
+  } else {
     support.value = 'no-ar'
   }
 })
@@ -60,19 +99,41 @@ onMounted(async () => {
 
 const flatDist = (a: Pt3, b: Pt3) => Math.hypot(b[0] - a[0], b[2] - a[2])
 
+/** The point the rubber band and the distance readout start from. */
+function measureFrom(): Pt3 | undefined {
+  if (openingStart.value) return openingStart.value
+  if (mode.value === 'corner') return current.value.at(-1)
+  if (mode.value === 'move') return standAt.value
+  return undefined
+}
+
 const liveDistance = computed(() => {
-  const from = openingStart.value ?? (mode.value === 'corner' ? current.value.at(-1) : undefined)
+  const from = measureFrom()
   return from && aim.value ? flatDist(from, aim.value) : null
 })
 
+/** In aim mode, far points are unreliable: a 1° wobble moves them tens of centimetres. */
+const tooFar = computed(() => method.value === 'aim' && !!aim.value && flatDist(standAt.value, aim.value) > MAX_AIM_DIST)
+
 const hint = computed(() => {
-  if (!tracking.value) return 'Tracking lost. Point the phone at the room and move it slowly.'
-  if (!aim.value) return 'Move the phone slowly and point at the floor until the ring appears.'
+  if (method.value === 'aim') {
+    if (!tracking.value) return 'No motion sensor readings. Hold the phone still for a moment.'
+    if (!aim.value) return 'Tilt the phone down and put the cross on the floor.'
+    if (tooFar.value && mode.value !== 'move') return 'That spot is far away and won\'t be accurate. Use Move to walk closer.'
+    if (mode.value === 'move') return 'Aim at the floor where you\'ll stand next and tap. Then walk there and stand on that spot.'
+  } else {
+    if (!tracking.value) return 'Tracking lost. Point the phone at the room and move it slowly.'
+    if (!aim.value) return 'Move the phone slowly and point at the floor until the ring appears.'
+  }
   if (mode.value === 'corner') {
+    if (method.value === 'aim') {
+      return current.value.length === 0 ? 'Put the cross on the floor right in a corner and tap.' : 'Aim at the next corner and tap.'
+    }
     return current.value.length === 0 ? 'Tap anywhere to place the first corner of this room.' : 'Tap to place the next corner.'
   }
   const what = mode.value === 'door' ? 'door' : 'window'
-  return openingStart.value ? `Now tap the other side of the ${what}.` : `Tap one side of the ${what}.`
+  const where = method.value === 'aim' ? 'the floor at ' : ''
+  return openingStart.value ? `Now tap ${where}the other side of the ${what}.` : `Tap ${where}one side of the ${what}.`
 })
 
 const roomLabel = computed(() => `Room ${rooms.value.length + 1}`)
@@ -165,7 +226,7 @@ function onFrame(_t: number, frame?: XRFrame) {
   }
 
   // Rubber band from the last point to where the user is aiming.
-  const from = openingStart.value ?? (mode.value === 'corner' ? current.value.at(-1) : undefined)
+  const from = measureFrom()
   if (from && aimNow) {
     placeBar(preview, from, aimNow)
     ;(preview.material as THREE_NS.MeshBasicMaterial).color.setHex(
@@ -182,7 +243,12 @@ function onFrame(_t: number, frame?: XRFrame) {
   renderer.render(scene, camera)
 }
 
-async function startScan() {
+function startScan() {
+  if (method.value === 'aim') startAim()
+  else startAr()
+}
+
+async function startAr() {
   error.value = null
   phase.value = 'scanning'
   await nextTick() // the overlay root must be in the DOM before the session starts
@@ -227,6 +293,111 @@ async function startScan() {
   }
 }
 
+// ── Aim mode (no WebXR) ──
+
+const MIN_HEIGHT = 0.5
+const MAX_HEIGHT = 2.2
+/** Beyond this, aim-mode points get too inaccurate to place. */
+const MAX_AIM_DIST = 6
+
+const aimTracker = useAimTracker()
+/** Height of the phone above the floor while scanning. Every aim-mode point scales with it. */
+const phoneHeight = ref(1.4)
+/** Where the user stands, on the floor. Changed by "Move". */
+const standAt = ref<Pt3>([0, 0, 0])
+/** Earlier standing spots, for undoing a move. */
+const moves: Pt3[] = []
+const videoEl = ref<HTMLVideoElement | null>(null)
+let stream: MediaStream | null = null
+let wakeLock: { release: () => Promise<void> } | null = null
+let aimTimer: ReturnType<typeof setInterval> | undefined
+
+/** Scales every aim-mode point: they're all proportional to the phone height. */
+function rescale(f: number) {
+  const s = (p: Pt3): Pt3 => [p[0] * f, p[1] * f, p[2] * f]
+  for (const r of rooms.value) r.corners = r.corners.map(s)
+  current.value = current.value.map(s)
+  openings.value = openings.value.map((o) => ({ ...o, a: s(o.a), b: s(o.b) }))
+  if (openingStart.value) openingStart.value = s(openingStart.value)
+  standAt.value = s(standAt.value)
+  moves.forEach((m, i) => { moves[i] = s(m) })
+}
+
+function setPhoneHeight(raw: string) {
+  const v = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, parseFloat(raw.replace(',', '.')) || phoneHeight.value))
+  const f = v / phoneHeight.value
+  phoneHeight.value = v
+  if (method.value === 'aim' && f !== 1) rescale(f)
+  try { localStorage.setItem('haive.scanHeight', String(v)) } catch { /* storage blocked */ }
+}
+
+async function startAim() {
+  error.value = null
+  // iOS only shows the motion prompt when asked straight from the tap.
+  const permitted = aimTracker.requestPermission()
+  try {
+    if (!(await permitted)) {
+      throw new Error('motion access was denied. Close Chrome completely, open this page again and tap Allow.')
+    }
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false })
+    if (!(await aimTracker.start())) throw new Error('this device doesn\'t report its orientation.')
+    phase.value = 'scanning'
+    await nextTick()
+    if (videoEl.value) {
+      videoEl.value.srcObject = stream
+      // Not awaited: it only settles once the first frame arrives.
+      videoEl.value.play().catch(() => {})
+    }
+    aimTimer = setInterval(() => {
+      tracking.value = aimTracker.alive()
+      const d = aimTracker.direction(150, 0)
+      aim.value = d ? floorPoint(d, phoneHeight.value, standAt.value) : null
+    }, 100)
+    ;(navigator as any).wakeLock?.request('screen').then((l: NonNullable<typeof wakeLock>) => {
+      if (stream) wakeLock = l
+      else l.release().catch(() => {})
+    }, () => {})
+  } catch (e) {
+    const err = e as Error
+    const msg = err?.name === 'NotAllowedError' ? 'camera access was denied. Allow it for this site and try again.' : err?.message ?? String(e)
+    error.value = `Couldn't start the scan: ${msg}`
+    stopAim()
+    phase.value = 'intro'
+  }
+}
+
+function stopAim() {
+  clearInterval(aimTimer)
+  aimTracker.stop()
+  stream?.getTracks().forEach((t) => t.stop())
+  stream = null
+  wakeLock?.release().catch(() => {})
+  wakeLock = null
+  aim.value = null
+}
+
+function tapAim() {
+  const d = aimTracker.direction()
+  aimNow = d ? floorPoint(d, phoneHeight.value, standAt.value) : null
+  // Way off: almost certainly aimed at a wall by accident.
+  if (aimNow && flatDist(standAt.value, aimNow) > MAX_AIM_DIST * 1.5) {
+    navigator.vibrate?.([30, 50, 30])
+    return
+  }
+  addPoint()
+}
+
+/** Top-down view of the scan so far, for aim mode (nothing is drawn on the camera feed). */
+const miniMap = computed(() => {
+  const pts: Pt3[] = [standAt.value, ...rooms.value.flatMap((r) => r.corners), ...current.value, ...openings.value.flatMap((o) => [o.a, o.b])]
+  if (aim.value) pts.push(aim.value)
+  const xs = pts.map((p) => p[0]), zs = pts.map((p) => p[2])
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cz = (Math.min(...zs) + Math.max(...zs)) / 2
+  const size = Math.max(4, Math.max(...xs) - Math.min(...xs) + 1, Math.max(...zs) - Math.min(...zs) + 1)
+  return { viewBox: `${cx - size / 2} ${cz - size / 2} ${size} ${size}`, r: size * 0.025 }
+})
+const svgPoints = (ps: Pt3[]) => ps.map((p) => `${p[0]},${p[2]}`).join(' ')
+
 function teardown() {
   hitSource?.cancel()
   hitSource = null
@@ -253,7 +424,12 @@ function onSessionEnd() {
 function addPoint() {
   const p = aimNow
   if (!p) return
-  if (mode.value === 'corner') {
+  if (mode.value === 'move') {
+    moves.push(standAt.value)
+    standAt.value = p
+    log.push('move')
+    mode.value = 'corner'
+  } else if (mode.value === 'corner') {
     current.value.push(p)
     log.push('corner')
   } else if (!openingStart.value) {
@@ -283,6 +459,7 @@ function undo() {
   if (last === 'corner') current.value.pop()
   else if (last === 'start') openingStart.value = null
   else if (last === 'opening') openings.value.pop()
+  else if (last === 'move') standAt.value = moves.pop() ?? [0, 0, 0]
   else if (last === 'room') {
     const room = rooms.value.pop()
     if (room) current.value = room.corners
@@ -299,7 +476,13 @@ function finishRoom() {
 }
 
 function endScan() {
-  session?.end()
+  if (method.value === 'ar') {
+    session?.end()
+    return
+  }
+  if (current.value.length >= 3) finishRoom()
+  stopAim()
+  phase.value = rooms.value.length ? 'review' : 'intro'
 }
 
 // ── Review & send ──
@@ -315,6 +498,12 @@ const previewPlan = computed(() => {
   let n = 0
   return convertScan(scanResult.value, [], () => `p${n++}`)
 })
+
+/** Width × depth of each squared-up room, so the user can sanity-check the scale. */
+const roomSizes = computed(() => previewPlan.value.rooms.map((r) => {
+  const xs = r.vertices.map((p) => p[0]), zs = r.vertices.map((p) => p[1])
+  return `${(Math.max(...xs) - Math.min(...xs)).toFixed(1)} × ${(Math.max(...zs) - Math.min(...zs)).toFixed(1)} m`
+}))
 
 const previewBox = computed(() => {
   const pts = previewPlan.value.rooms.flatMap((r) => r.vertices)
@@ -362,6 +551,8 @@ function startOver() {
   openings.value = []
   openingStart.value = null
   log.length = 0
+  standAt.value = [0, 0, 0]
+  moves.length = 0
   discardArmed.value = false
   phase.value = 'intro'
 }
@@ -369,6 +560,7 @@ function startOver() {
 onBeforeUnmount(() => {
   session?.end().catch(() => {})
   teardown()
+  stopAim()
 })
 </script>
 
@@ -388,18 +580,61 @@ onBeforeUnmount(() => {
 
       <div v-if="support === 'checking'" class="text-sm text-fg-muted">Checking AR support…</div>
 
+      <!-- iPhones can't treat http as secure, so they go to the HTTPS port instead -->
+      <div v-else-if="support === 'insecure' && isIos && httpsUrl" class="rounded-2xl border border-yellow-500/40 bg-yellow-500/10 p-4 text-sm leading-snug flex flex-col gap-3">
+        <b>The scanner needs a secure connection.</b>
+        <span>Open the secure version of this page. Chrome will warn that the connection isn't private, because HAIVE uses its own certificate: tap <b>Show details</b>, then <b>Visit this website</b>.</span>
+        <a :href="httpsUrl" class="btn-touch gap-2 text-sm font-semibold bg-accent !text-bg">
+          <Icon icon="mdi:lock" width="18" height="18" />
+          Open secure scanner
+        </a>
+        <span class="text-xs text-fg-muted">
+          If the camera still won't start, trust HAIVE's certificate once: open
+          <span class="font-mono break-all">{{ origin }}/api/ssl/ca.crt</span> in <b>Safari</b>, allow the download, install it under
+          <b>Settings → General → VPN &amp; Device Management</b>, then turn it on under
+          <b>Settings → General → About → Certificate Trust Settings</b>.
+        </span>
+      </div>
+
       <div v-else-if="support === 'insecure'" class="rounded-2xl border border-yellow-500/40 bg-yellow-500/10 p-4 text-sm leading-snug flex flex-col gap-2">
         <b>AR needs a secure connection.</b>
         <span>In Chrome, open <span class="font-mono text-xs break-all">chrome://flags/#unsafely-treat-insecure-origin-as-secure</span>, add</span>
         <span class="font-mono text-xs break-all">{{ origin }}</span>
         <span>set it to <b>Enabled</b>, relaunch Chrome and reload this page.</span>
+        <a v-if="httpsUrl" :href="httpsUrl" class="text-xs underline text-fg-muted">Or open the secure version of this page</a>
       </div>
 
-      <div v-else-if="support === 'no-xr' || support === 'no-ar'" class="rounded-2xl border border-red-500/40 bg-red-500/10 p-4 text-sm leading-snug">
-        <b>This browser can't do AR.</b>
-        Open this page in Chrome on an Android phone with
-        <i>Google Play Services for AR</i> installed. iPhones and desktop browsers aren't supported.
+      <div v-else-if="support === 'no-ar'" class="rounded-2xl border border-red-500/40 bg-red-500/10 p-4 text-sm leading-snug">
+        <b>This browser can't scan rooms.</b>
+        It has no camera access or motion sensors. Open this page on a phone, in Chrome or Safari.
       </div>
+
+      <template v-else-if="method === 'aim'">
+        <ol class="flex flex-col gap-3 text-sm leading-snug list-decimal pl-5">
+          <li>
+            Hold the phone at chest height and keep it at that height the whole time. Enter how high that is above the floor:
+            <label class="flex items-center gap-3 mt-2">
+              <span class="text-xs text-fg-muted">Phone height</span>
+              <input
+                class="field-input w-24"
+                inputmode="decimal"
+                :value="phoneHeight.toFixed(2)"
+                @change="setPhoneHeight(($event.target as HTMLInputElement).value)"
+              />
+              <span class="text-xs text-fg-muted">m</span>
+            </label>
+          </li>
+          <li>Stand where you can see the corners. Put the cross on the floor right in each corner and tap, going around the room in order.</li>
+          <li>Switch to <b>Door</b> or <b>Window</b> and tap the floor at both sides of each one.</li>
+          <li>Corner hidden, or on to the next room? Tap <b>Move</b>, aim at the floor where you'll stand, tap, and walk there. That keeps the rooms lined up.</li>
+          <li>Tap <b>Finish room</b> after each room, and <b>Done</b> at the end.</li>
+        </ol>
+        <p class="field-hint">Corners 1–4 m away are the most accurate. A wrong phone height only changes the scale, and you can fix it afterwards.</p>
+        <button class="btn-touch gap-2 text-sm font-semibold bg-accent !text-bg" @click="startScan">
+          <Icon icon="mdi:crosshairs-gps" width="20" height="20" />
+          Start scan
+        </button>
+      </template>
 
       <template v-else>
         <ol class="flex flex-col gap-3 text-sm leading-snug list-decimal pl-5">
@@ -448,9 +683,24 @@ onBeforeUnmount(() => {
       <div class="flex flex-col gap-2">
         <label v-for="(room, i) in rooms" :key="i" class="flex items-center gap-3">
           <span class="text-xs text-fg-muted w-14 shrink-0">Room {{ i + 1 }}</span>
-          <input v-model="room.name" class="field-input flex-1" maxlength="80" />
+          <input v-model="room.name" class="field-input flex-1 min-w-0" maxlength="80" />
+          <span v-if="roomSizes[i]" class="text-xs text-fg-muted tabular-nums shrink-0">{{ roomSizes[i] }}</span>
         </label>
       </div>
+
+      <label v-if="method === 'aim'" class="flex flex-col gap-1">
+        <span class="flex items-center gap-3">
+          <span class="text-xs text-fg-muted">Phone height</span>
+          <input
+            class="field-input w-24"
+            inputmode="decimal"
+            :value="phoneHeight.toFixed(2)"
+            @change="setPhoneHeight(($event.target as HTMLInputElement).value)"
+          />
+          <span class="text-xs text-fg-muted">m</span>
+        </span>
+        <span class="field-hint">Sizes off? Change the phone height: everything scales with it.</span>
+      </label>
 
       <button class="btn-touch gap-2 text-sm font-semibold bg-accent !text-bg" :disabled="sending" @click="send">
         <Icon :icon="sending ? 'mdi:loading' : 'mdi:send'" :class="{ 'animate-spin': sending }" width="18" height="18" />
@@ -480,38 +730,77 @@ onBeforeUnmount(() => {
       v-show="phase === 'scanning'"
       ref="overlayEl"
       class="fixed inset-0 flex flex-col justify-between text-white select-none"
+      :class="{ 'bg-black': method === 'aim' }"
     >
-      <div class="p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
-        <div class="rounded-2xl bg-black/60 backdrop-blur px-4 py-3 flex flex-col gap-1">
-          <div class="flex items-center gap-2 text-xs text-white/70">
-            <span class="font-semibold text-white">{{ roomLabel }}</span>
-            <span>· {{ current.length }} corner{{ current.length === 1 ? '' : 's' }}</span>
-            <span v-if="rooms.length">· {{ rooms.length }} done</span>
-            <span v-if="openings.length">· {{ openings.length }} doors/windows</span>
+      <!-- Aim mode: camera feed, and the whole screen is the shutter -->
+      <template v-if="method === 'aim'">
+        <video ref="videoEl" class="absolute inset-0 w-full h-full object-cover" playsinline muted autoplay />
+        <div class="absolute inset-0" @pointerdown.prevent="tapAim" />
+      </template>
+
+      <div class="relative p-3 pt-[max(0.75rem,env(safe-area-inset-top))] pointer-events-none">
+        <div class="rounded-2xl bg-black/60 backdrop-blur px-4 py-3 flex gap-3">
+          <div class="flex-1 min-w-0 flex flex-col gap-1">
+            <div class="flex flex-wrap items-center gap-x-2 text-xs text-white/70">
+              <span class="font-semibold text-white">{{ roomLabel }}</span>
+              <span>· {{ current.length }} corner{{ current.length === 1 ? '' : 's' }}</span>
+              <span v-if="rooms.length">· {{ rooms.length }} done</span>
+              <span v-if="openings.length">· {{ openings.length }} doors/windows</span>
+            </div>
+            <div class="text-sm leading-snug">{{ hint }}</div>
+            <div v-if="liveDistance !== null" class="text-2xl font-semibold tabular-nums" :class="{ 'text-yellow-300': tooFar }">{{ liveDistance.toFixed(2) }} m</div>
           </div>
-          <div class="text-sm leading-snug">{{ hint }}</div>
-          <div v-if="liveDistance !== null" class="text-2xl font-semibold tabular-nums">{{ liveDistance.toFixed(2) }} m</div>
+          <!-- Top-down map, north up: you (white), aim (yellow line), rooms so far -->
+          <svg v-if="method === 'aim'" :viewBox="miniMap.viewBox" class="w-24 h-24 shrink-0 rounded-xl bg-white/5">
+            <polygon
+              v-for="(room, i) in rooms"
+              :key="i"
+              :points="svgPoints(room.corners)"
+              fill="rgb(45 212 191 / 0.2)"
+              stroke="#2dd4bf"
+              stroke-width="1.5"
+              vector-effect="non-scaling-stroke"
+            />
+            <polyline :points="svgPoints(current)" fill="none" stroke="#facc15" stroke-width="1.5" vector-effect="non-scaling-stroke" />
+            <line
+              v-for="(op, i) in openings"
+              :key="`o${i}`"
+              :x1="op.a[0]" :y1="op.a[2]" :x2="op.b[0]" :y2="op.b[2]"
+              :stroke="op.type === 'door' ? '#fb923c' : '#38bdf8'"
+              stroke-width="3"
+              vector-effect="non-scaling-stroke"
+            />
+            <template v-if="aim">
+              <line
+                :x1="standAt[0]" :y1="standAt[2]" :x2="aim[0]" :y2="aim[2]"
+                stroke="white" stroke-opacity="0.5" stroke-width="1" stroke-dasharray="2 2"
+                vector-effect="non-scaling-stroke"
+              />
+              <circle :cx="aim[0]" :cy="aim[2]" :r="miniMap.r" :fill="tooFar ? '#fde047' : '#facc15'" />
+            </template>
+            <circle :cx="standAt[0]" :cy="standAt[2]" :r="miniMap.r * 1.4" fill="white" />
+          </svg>
         </div>
       </div>
 
-      <!-- Aiming cross: the hit test fires from the centre of the screen -->
-      <div class="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6">
-        <div class="absolute top-1/2 left-0 right-0 h-px bg-white/80" />
-        <div class="absolute left-1/2 top-0 bottom-0 w-px bg-white/80" />
+      <!-- Aiming cross: points are taken where the centre of the screen points -->
+      <div class="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" :class="method === 'aim' ? 'w-10 h-10' : 'w-6 h-6'">
+        <div class="absolute top-1/2 left-0 right-0 h-px bg-white/80" :class="{ 'h-0.5 shadow': method === 'aim' }" />
+        <div class="absolute left-1/2 top-0 bottom-0 w-px bg-white/80" :class="{ 'w-0.5 shadow': method === 'aim' }" />
       </div>
 
       <!-- Controls. beforexrselect stops taps here from also placing a point. -->
-      <div class="p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]" @beforexrselect.prevent>
+      <div class="relative p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]" @beforexrselect.prevent>
         <div class="rounded-2xl bg-black/60 backdrop-blur p-2 flex flex-col gap-2">
-          <div class="grid grid-cols-3 gap-1">
+          <div class="grid gap-1" :class="method === 'aim' ? 'grid-cols-4' : 'grid-cols-3'">
             <button
-              v-for="m in (['corner', 'door', 'window'] as const)"
+              v-for="m in (method === 'aim' ? ['corner', 'door', 'window', 'move'] as const : ['corner', 'door', 'window'] as const)"
               :key="m"
               class="h-11 rounded-xl text-sm font-medium flex items-center justify-center gap-1.5 capitalize"
               :class="mode === m ? 'bg-white text-black' : 'bg-white/10'"
               @click="setMode(m)"
             >
-              <Icon :icon="m === 'corner' ? 'mdi:vector-square' : m === 'door' ? 'mdi:door' : 'mdi:window-closed-variant'" width="18" height="18" />
+              <Icon :icon="modeIcon[m]" width="18" height="18" />
               {{ m }}
             </button>
           </div>

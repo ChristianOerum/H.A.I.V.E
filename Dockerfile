@@ -41,5 +41,5 @@ LABEL \
   io.hass.type="app" \
   io.hass.arch="${TARGETARCH}"
 
-EXPOSE 3000
+EXPOSE 3000 3443
 CMD ["/run.sh"]

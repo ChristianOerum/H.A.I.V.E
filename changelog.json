@@ -1,5 +1,15 @@
 ﻿[
   {
+    "version": "2026.10.4",
+    "date": "2026-10-11",
+    "changes": [
+      "Room scanning on iPhone: aim the camera at each floor corner and tap. Uses the phone's motion sensors, since iPhones can't do AR in the browser. \"Move\" keeps rooms lined up, and the phone height can be corrected afterwards.",
+      "HAIVE is also served over HTTPS on port 3443 with its own certificate, which iPhones need for camera access. The certificate is limited to local addresses.",
+      "The scan dialog has Android and iPhone instructions, and shows an \"Open the scanner\" button when opened on a phone.",
+      "Scan review shows each room's size."
+    ]
+  },
+  {
     "version": "2026.10.3",
     "date": "2026-10-11",
     "changes": [

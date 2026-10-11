@@ -69,3 +69,4 @@ stopped is printed there. Include the log when reporting an issue.
 | Port | Purpose |
 | ---- | ------- |
 | 3000 | HAIVE dashboard (HTTP + WebSocket) |
+| 3443 | The same app over HTTPS with a self-signed certificate. Needed for room scanning on an iPhone |

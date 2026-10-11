@@ -11,3 +11,4 @@ dist
 config/device.json
 config/preferences.json
 config/scan-pending.json
+config/ssl/
