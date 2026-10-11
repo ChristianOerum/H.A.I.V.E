@@ -1,5 +1,13 @@
 ﻿[
   {
+    "version": "2026.10.5",
+    "date": "2026-10-11",
+    "changes": [
+      "Import rooms from a Polycam scan: export the scan as GLTF (free plan) and choose the file under Settings, Rooms, Import room scan. Walls, doors and windows from LiDAR room scans come straight in, and plain 3D scans are cut through at two heights to find the walls and separate the rooms.",
+      "Removed the iPhone camera-aiming scanner and the HTTPS port (3443) added in 2026.10.4. Android phones with ARCore can still scan with AR from the same dialog."
+    ]
+  },
+  {
     "version": "2026.10.4",
     "date": "2026-10-11",
     "changes": [

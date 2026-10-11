@@ -109,8 +109,8 @@ function unhighlight() {
     </div>
 
     <button v-else class="btn-touch shrink-0 gap-2 text-sm" @click="scanModalOpen = true">
-      <Icon icon="mdi:cellphone-marker" width="18" height="18" />
-      Scan rooms with phone
+      <Icon icon="mdi:cube-scan" width="18" height="18" />
+      Import room scan
     </button>
     <SettingsScanModal :open="scanModalOpen" @close="scanModalOpen = false" />
 
@@ -118,7 +118,7 @@ function unhighlight() {
     <div v-if="fp.rooms.length === 0" class="flex flex-col items-center text-center gap-2 py-10 px-4">
       <Icon icon="mdi:floor-plan" width="36" height="36" class="text-fg-muted" />
       <p class="text-sm font-medium">No rooms yet</p>
-      <p class="field-hint">Use the canvas on the left to draw your first room, or scan it with a phone.</p>
+      <p class="field-hint">Use the canvas on the left to draw your first room, or import a Polycam scan.</p>
     </div>
 
     <SettingsItem

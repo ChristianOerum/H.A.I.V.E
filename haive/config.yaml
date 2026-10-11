@@ -1,6 +1,6 @@
 name: HAIVE
 slug: haive
-version: "2026.10.4"
+version: "2026.10.5"
 description: 3D Home Assistant interface for touchscreens, phones and wall panels.
 url: https://github.com/ChristianOerum/H.A.I.V.E.
 # Prebuilt multi-arch image (deploy/publish-image.sh|ps1) — Supervisor pulls it
@@ -21,10 +21,8 @@ homeassistant_api: true
 hassio_api: true
 ports:
   3000/tcp: 3000
-  3443/tcp: 3443
 ports_description:
   3000/tcp: HAIVE dashboard — open this address on any screen in the house
-  3443/tcp: HAIVE over HTTPS (self-signed) — used by the iPhone room scanner
 panel_icon: mdi:home-automation
 options: {}
 schema: {}

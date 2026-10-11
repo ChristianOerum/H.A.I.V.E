@@ -1,6 +1,5 @@
 import { assertLanClient } from '~~/server/utils/lanGuard'
 import { lanAddresses } from '~~/server/utils/lanAddresses'
-import { httpsPort } from '~~/server/utils/https'
 
 /**
  * Returns this device's primary LAN IPv4 address (and any others). Handy when
@@ -14,7 +13,5 @@ export default defineEventHandler(async (event) => {
   return {
     ip: addresses[0] ?? null,
     addresses,
-    /** Port of the HTTPS listener (server/plugins/https.ts), null when it isn't running. */
-    httpsPort: httpsPort(),
   }
 })
