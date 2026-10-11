@@ -6,7 +6,8 @@
       "The room list shows the total floor area of all rooms.",
       "Doors can show the door itself: turn on Show door, set how far open it is (0 to 180 degrees), and flip the hinge side or swing direction.",
       "Remove a single wall of a room: the neighbouring walls extend until they meet, and a small jog straightens out. Doors and windows stay where they are.",
-      "Dragging a corner snaps it onto other rooms' corners and walls, and lines it up with nearby corners. Dragging a whole room snaps its corners onto neighbouring rooms."
+      "Dragging a corner snaps it onto other rooms' corners and walls, and lines it up with nearby corners. Dragging a whole room snaps its corners onto neighbouring rooms.",
+      "Rotate the whole floorplan by any number of degrees, or 90 degrees at a time, from Settings, Rooms. Furniture and devices turn with it."
     ]
   },
   {

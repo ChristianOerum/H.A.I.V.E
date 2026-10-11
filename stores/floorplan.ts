@@ -1,4 +1,6 @@
 import { defineStore } from 'pinia'
+import { Euler, Quaternion, Vector3 } from 'three'
+import type { DevicePlacement } from '~/stores/layout'
 import { randomId } from '~/utils/randomId'
 import { MOCK_WASHER_FURNITURE, claimMockSeed } from '~/utils/mockSeed'
 
@@ -127,7 +129,25 @@ function uid() {
   return randomId()
 }
 
-type Snapshot = { rooms: FloorplanRoom[]; openings: FloorplanOpening[]; furniture: FloorplanFurniture[]; furnitureGroups: FloorplanFurnitureGroup[] }
+type Snapshot = {
+  rooms: FloorplanRoom[]; openings: FloorplanOpening[]; furniture: FloorplanFurniture[]; furnitureGroups: FloorplanFurnitureGroup[]
+  /** Device placements, only for steps that also moved devices (rotatePlan). */
+  placements?: DevicePlacement[]
+}
+
+const DEG = Math.PI / 180
+/** Turns an object's X/Y/Z rotation (degrees) by `angle` radians about the world's vertical axis. */
+function yawed(rotX: number, rotY: number, rotZ: number, angle: number): [number, number, number] {
+  if (!rotX && !rotZ) {
+    let y = rotY + angle / DEG
+    y = ((y + 180) % 360 + 360) % 360 - 180
+    return [0, Math.round(y * 100) / 100, 0]
+  }
+  const q = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), angle)
+    .multiply(new Quaternion().setFromEuler(new Euler(rotX * DEG, rotY * DEG, rotZ * DEG)))
+  const e = new Euler().setFromQuaternion(q)
+  return [e.x / DEG, e.y / DEG, e.z / DEG].map((v) => Math.round(v * 100) / 100) as [number, number, number]
+}
 
 export const useFloorplanStore = defineStore('floorplan', {
   state: () => ({
@@ -179,8 +199,21 @@ export const useFloorplanStore = defineStore('floorplan', {
     canRedo: (state) => state._future.length > 0,
   },
   actions: {
-    _snapshot(): Snapshot {
-      return JSON.parse(JSON.stringify({ rooms: this.rooms, openings: this.openings, furniture: this.furniture, furnitureGroups: this.furnitureGroups }))
+    _snapshot(withPlacements = false): Snapshot {
+      const placements = withPlacements ? useLayoutStore().placements : undefined
+      return JSON.parse(JSON.stringify({ rooms: this.rooms, openings: this.openings, furniture: this.furniture, furnitureGroups: this.furnitureGroups, placements }))
+    },
+    _restore(snap: Snapshot) {
+      this.rooms = snap.rooms
+      this.openings = snap.openings
+      this.furniture = snap.furniture
+      this.furnitureGroups = snap.furnitureGroups
+      if (snap.placements) {
+        const layout = useLayoutStore()
+        layout.placements = snap.placements
+        layout.dirty = true
+      }
+      this.dirty = true
     },
     _push() {
       this._history.push(this._snapshot())
@@ -189,23 +222,15 @@ export const useFloorplanStore = defineStore('floorplan', {
     },
     undo() {
       if (!this._history.length) return
-      this._future.push(this._snapshot())
       const prev = this._history.pop()!
-      this.rooms = prev.rooms
-      this.openings = prev.openings
-      this.furniture = prev.furniture
-      this.furnitureGroups = prev.furnitureGroups
-      this.dirty = true
+      this._future.push(this._snapshot(!!prev.placements))
+      this._restore(prev)
     },
     redo() {
       if (!this._future.length) return
-      this._history.push(this._snapshot())
       const next = this._future.pop()!
-      this.rooms = next.rooms
-      this.openings = next.openings
-      this.furniture = next.furniture
-      this.furnitureGroups = next.furnitureGroups
-      this.dirty = true
+      this._history.push(this._snapshot(!!next.placements))
+      this._restore(next)
     },
     async load() {
       // Mock mode: use the localStorage sandbox if present, otherwise seed from
@@ -452,6 +477,51 @@ export const useFloorplanStore = defineStore('floorplan', {
         o.t = Math.max(0, Math.min(1, ((px - a[0]) * dx + (pz - a[1]) * dz) / lenSq))
         return true
       })
+      this.dirty = true
+    },
+    /**
+     * Rotates the whole home by `degrees` (positive = clockwise seen from
+     * above) about the middle of the rooms: rooms, furniture, furniture groups
+     * and device markers turn together. One undo step.
+     */
+    rotatePlan(degrees: number) {
+      if (!degrees || !this.rooms.length) return
+      const layout = useLayoutStore()
+      this._history.push(this._snapshot(true))
+      if (this._history.length > 50) this._history.shift()
+      this._future = []
+
+      const [cx, cz] = this.center
+      const a = -degrees * DEG
+      const c = Math.cos(a), s = Math.sin(a)
+      const round = (v: number) => Math.round(v * 10000) / 10000
+      const turn = (x: number, z: number): [number, number] => {
+        const dx = x - cx, dz = z - cz
+        return [round(cx + dx * c + dz * s), round(cz - dx * s + dz * c)]
+      }
+
+      for (const r of this.rooms) r.vertices = r.vertices.map(([x, z]) => turn(x, z))
+      for (const g of this.furnitureGroups) {
+        ;[g.x, g.z] = turn(g.x ?? 0, g.z ?? 0)
+        const [rx, ry, rz] = yawed(g.rotX ?? 0, g.rotY ?? 0, g.rotZ ?? 0, a)
+        g.rotY = ry
+        if (g.rotX !== undefined || rx) g.rotX = rx
+        if (g.rotZ !== undefined || rz) g.rotZ = rz
+      }
+      // Grouped items sit in their group's frame, which already turned.
+      for (const f of this.furniture) {
+        if (f.groupId && this.furnitureGroups.some((g) => g.id === f.groupId)) continue
+        ;[f.x, f.z] = turn(f.x, f.z)
+        const [rx, ry, rz] = yawed(f.rotX ?? 0, f.rotY ?? 0, f.rotZ ?? 0, a)
+        f.rotY = ry
+        if (f.rotX !== undefined || rx) f.rotX = rx
+        if (f.rotZ !== undefined || rz) f.rotZ = rz
+      }
+      for (const p of layout.placements) {
+        const [x, z] = turn(p.position[0], p.position[2])
+        p.position = [x, p.position[1], z]
+      }
+      if (layout.placements.length) layout.dirty = true
       this.dirty = true
     },
     updateVertex(roomId: string, index: number, value: [number, number]) {

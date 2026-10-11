@@ -35,6 +35,9 @@ function area(room: FloorplanRoom): number {
   return Math.abs(s) / 2
 }
 
+/** Degrees for "Rotate floorplan"; positive is clockwise. */
+const rotateBy = ref(15)
+
 const totalArea = computed(() => fp.rooms.reduce((sum, r) => sum + area(r), 0))
 
 function roomOpenings(roomId: string) {
@@ -115,6 +118,30 @@ function unhighlight() {
       Import room scan
     </button>
     <SettingsScanModal :open="scanModalOpen" @close="scanModalOpen = false" />
+
+    <!-- Rotate the whole plan -->
+    <div v-if="fp.rooms.length" class="shrink-0 flex flex-col gap-1">
+      <div class="flex items-center gap-2">
+        <button class="btn-touch w-11 shrink-0 !px-0" aria-label="Rotate 90° anticlockwise" @click="fp.rotatePlan(-90)">
+          <Icon icon="mdi:rotate-left" width="20" height="20" />
+        </button>
+        <SettingsNumber
+          class="flex-1"
+          label="Rotate floorplan by"
+          :value="rotateBy"
+          :step="1"
+          :min="-180"
+          :max="180"
+          unit="°"
+          @change="(v) => (rotateBy = v ?? 0)"
+        />
+        <button class="btn-touch shrink-0 text-sm" :disabled="!rotateBy" @click="fp.rotatePlan(rotateBy)">Rotate</button>
+        <button class="btn-touch w-11 shrink-0 !px-0" aria-label="Rotate 90° clockwise" @click="fp.rotatePlan(90)">
+          <Icon icon="mdi:rotate-right" width="20" height="20" />
+        </button>
+      </div>
+      <p class="field-hint">Turns rooms, furniture and devices together. Positive is clockwise.</p>
+    </div>
 
     <!-- Empty state -->
     <div v-if="fp.rooms.length === 0" class="flex flex-col items-center text-center gap-2 py-10 px-4">
