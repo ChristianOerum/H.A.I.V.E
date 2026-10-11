@@ -1,5 +1,14 @@
 ﻿[
   {
+    "version": "2026.10.2",
+    "date": "2026-10-11",
+    "changes": [
+      "Two-finger panning in the 3D view, kept within the floorplan and reset by the idle return.",
+      "Fix creating rooms, furniture and scans when HAIVE is opened over plain HTTP.",
+      "Demo mode now includes a washing machine to show the appliance animation."
+    ]
+  },
+  {
     "version": "2026.10.1",
     "date": "2026-10-10",
     "changes": [

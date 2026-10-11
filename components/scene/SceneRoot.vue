@@ -2,7 +2,7 @@
 import { TresCanvas } from '@tresjs/core'
 import { OrbitControls } from '@tresjs/cientos'
 import * as THREE from 'three'
-import { PCFShadowMap, type DirectionalLight } from 'three'
+import { PCFShadowMap, TOUCH, type DirectionalLight } from 'three'
 import { requestShadowUpdate } from '~/composables/useShadowUpdates'
 
 const layout = useLayoutStore()
@@ -154,10 +154,15 @@ function furnitureLightFacing(furnitureId: string): number {
     <SceneRenderControl />
     <TresPerspectiveCamera :position="cameraPosition" :look-at="center" :fov="45" />
 
+    <!-- One finger orbits, two fingers pinch-zoom and pan. Panning moves the
+         orbit target; SceneCameraController clamps it to the floorplan and
+         brings it back to the centre with the idle return. -->
     <OrbitControls
+      make-default
       :target="center"
       :enabled="!isLocked && !isReturning"
-      :enable-pan="false"
+      :enable-pan="true"
+      :touches="{ ONE: TOUCH.ROTATE, TWO: TOUCH.DOLLY_PAN }"
       :enable-damping="true"
       :damping-factor="0.08"
       :min-distance="8"

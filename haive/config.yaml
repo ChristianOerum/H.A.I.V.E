@@ -1,6 +1,6 @@
 name: HAIVE
 slug: haive
-version: "2026.10.1"
+version: "2026.10.2"
 description: 3D Home Assistant interface for touchscreens, phones and wall panels.
 url: https://github.com/ChristianOerum/H.A.I.V.E.
 # Prebuilt multi-arch image (deploy/publish-image.sh|ps1) — Supervisor pulls it

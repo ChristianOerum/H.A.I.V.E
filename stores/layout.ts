@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { MOCK_WASHER_PLACEMENT, claimMockSeed } from '~/utils/mockSeed'
 
 const MOCK_LAYOUT_KEY = 'haive.mock.layout'
 
@@ -37,6 +38,7 @@ export const useLayoutStore = defineStore('layout', {
         if (raw) {
           try { this.placements = JSON.parse(raw).placements ?? [] } catch { this.placements = [] }
           this.dirty = false
+          await this._seedMock()
           return
         }
       }
@@ -49,6 +51,14 @@ export const useLayoutStore = defineStore('layout', {
         this.placements = []
       }
       this.dirty = false
+      if (isMockMode() && import.meta.client) await this._seedMock()
+    },
+    /** Mock mode: add the demo washing machine marker once per sandbox. */
+    async _seedMock() {
+      if (!claimMockSeed('washer.layout')) return
+      if (this.placementFor(MOCK_WASHER_PLACEMENT.entity_id)) return
+      this.placements.push({ ...MOCK_WASHER_PLACEMENT, position: [...MOCK_WASHER_PLACEMENT.position] })
+      await this.save()
     },
     async save() {
       // Mock mode never writes to the server — it stays a private sandbox.

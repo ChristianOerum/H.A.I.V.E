@@ -1,4 +1,6 @@
 import { defineStore } from 'pinia'
+import { randomId } from '~/utils/randomId'
+import { MOCK_WASHER_FURNITURE, claimMockSeed } from '~/utils/mockSeed'
 
 const MOCK_FLOORPLAN_KEY = 'haive.mock.floorplan'
 
@@ -114,7 +116,7 @@ export interface FloorplanSelection { type: FloorplanItemType; id: string }
 export type FloorplanEditorTab = 'rooms' | 'furniture' | 'devices' | 'preferences' | 'system'
 
 function uid() {
-  return crypto.randomUUID()
+  return randomId()
 }
 
 type Snapshot = { rooms: FloorplanRoom[]; openings: FloorplanOpening[]; furniture: FloorplanFurniture[]; furnitureGroups: FloorplanFurnitureGroup[] }
@@ -213,6 +215,7 @@ export const useFloorplanStore = defineStore('floorplan', {
             this._loadDefaults()
           }
           this.dirty = false
+          await this._seedMock()
           return
         }
       }
@@ -231,6 +234,17 @@ export const useFloorplanStore = defineStore('floorplan', {
         this._loadDefaults()
       }
       this.dirty = false
+      if (isMockMode() && import.meta.client) await this._seedMock()
+    },
+
+    /** Mock mode: add the demo washing machine model once per sandbox. */
+    async _seedMock() {
+      if (!claimMockSeed('washer.floorplan')) return
+      if (this.furnitureGroups.some((g) => g.label === MOCK_WASHER_FURNITURE.label)) return
+      this.importFurnitureGroup(MOCK_WASHER_FURNITURE)
+      // Seeding isn't an edit — keep it out of undo history.
+      this._history.pop()
+      await this.save()
     },
 
     _loadDefaults() {

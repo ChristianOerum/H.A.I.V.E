@@ -1,4 +1,5 @@
 import type { FloorplanOpening, FloorplanRoom } from '~/stores/floorplan'
+import { randomId } from '~/utils/randomId'
 
 /**
  * Raw output of the phone AR scan (pages/scan.vue), in the AR session's own
@@ -204,7 +205,7 @@ function projectOnSegment(m: P, p: P, q: P): { t: number; dist: number } {
 export function convertScan(
   scan: ScanResult,
   existingRooms: FloorplanRoom[],
-  newId: () => string = () => crypto.randomUUID(),
+  newId: () => string = randomId,
 ): ScanConversion {
   const raw = scan.rooms.map((r) => cleanPolygon(r.corners)).filter((v) => v.length >= 3)
   const theta = dominantAngle(raw)
