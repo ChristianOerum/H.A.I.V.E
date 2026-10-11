@@ -35,6 +35,10 @@ const dragVertex = ref<{ roomId: string; vtxIdx: number } | null>(null)
 const dragOpening = ref<{ openingId: string; roomId: string; edgeIdx: number } | null>(null)
 const panStart = ref<{ clientX: number; clientY: number; ox: number; oy: number } | null>(null)
 const drawSnapVertex = ref<[number, number] | null>(null) // snapped to existing vertex in draw mode
+/** What a dragged corner or room is snapping to, shown as a ring. */
+const dragSnapTarget = ref<[number, number] | null>(null)
+/** Alignment guide while dragging a corner: the corner it lines up with on x and/or z. */
+const dragGuides = ref<{ x?: [number, number]; z?: [number, number] } | null>(null)
 
 // ─── Multi-room selection + room-move drag ────────────────────────────────────
 const multiSelectedRoomIds = ref(new Set<string>())
@@ -83,6 +87,73 @@ function findSnapVertex(wx: number, wz: number): [number, number] | null {
     }
   }
   return best
+}
+
+/**
+ * Where a dragged corner should go: onto another corner, else onto another
+ * room's wall, else lined up with any other corner on x and/or z (own room
+ * included, which keeps walls straight). Falls back to the grid.
+ */
+function snapDraggedVertex(wx: number, wz: number, roomId: string, vtxIdx: number) {
+  const r = drawSnap.value
+  let best: [number, number] | null = null
+  let bestD = r
+  // Other rooms only: landing on one of its own corners would collapse a wall.
+  for (const room of fp.rooms) {
+    if (room.id === roomId) continue
+    for (const [vx, vz] of room.vertices) {
+      const d = Math.hypot(wx - vx, wz - vz)
+      if (d < bestD) { bestD = d; best = [vx, vz] }
+    }
+  }
+  if (best) return { pt: best as [number, number], target: best as [number, number], guides: null }
+
+  for (const room of fp.rooms) {
+    if (room.id === roomId) continue
+    const n = room.vertices.length
+    for (let i = 0; i < n; i++) {
+      const [ax, az] = room.vertices[i]
+      const [bx, bz] = room.vertices[(i + 1) % n]
+      const [cx, cz] = closestOnSeg(wx, wz, ax, az, bx, bz)
+      const d = Math.hypot(wx - cx, wz - cz)
+      if (d < bestD) { bestD = d; best = [cx, cz] }
+    }
+  }
+  if (best) return { pt: best as [number, number], target: best as [number, number], guides: null }
+
+  const alignR = r * 0.6
+  let gx: [number, number] | undefined, gz: [number, number] | undefined
+  let dxBest = alignR, dzBest = alignR
+  for (const room of fp.rooms) {
+    room.vertices.forEach(([vx, vz], k) => {
+      if (room.id === roomId && k === vtxIdx) return
+      if (Math.abs(wx - vx) < dxBest) { dxBest = Math.abs(wx - vx); gx = [vx, vz] }
+      if (Math.abs(wz - vz) < dzBest) { dzBest = Math.abs(wz - vz); gz = [vx, vz] }
+    })
+  }
+  const pt: [number, number] = [gx ? gx[0] : snap(wx), gz ? gz[1] : snap(wz)]
+  return { pt, target: null, guides: gx || gz ? { x: gx, z: gz } : null }
+}
+
+/** Nudge for a dragged group of rooms so one of their corners lands on another room's corner. */
+function snapRoomDrag(dx: number, dz: number, snaps: { id: string; verts: [number, number][] }[]) {
+  const moving = new Set(snaps.map(s => s.id))
+  let bestD = drawSnap.value
+  let fix: [number, number] | null = null
+  let target: [number, number] | null = null
+  for (const s of snaps) {
+    for (const [vx, vz] of s.verts) {
+      const mx = vx + dx, mz = vz + dz
+      for (const room of fp.rooms) {
+        if (moving.has(room.id)) continue
+        for (const [ox, oz] of room.vertices) {
+          const d = Math.hypot(mx - ox, mz - oz)
+          if (d < bestD) { bestD = d; fix = [ox - mx, oz - mz]; target = [ox, oz] }
+        }
+      }
+    }
+  }
+  return { dx: dx + (fix?.[0] ?? 0), dz: dz + (fix?.[1] ?? 0), target }
 }
 
 function closestOnSeg(
@@ -152,8 +223,10 @@ function onSvgMove(e: PointerEvent) {
   }
 
   if (dragVertex.value) {
-    const [sx, sz] = snapPt(wx, wz)
-    fp.updateVertex(dragVertex.value.roomId, dragVertex.value.vtxIdx, [sx, sz])
+    const { pt, target, guides } = snapDraggedVertex(wx, wz, dragVertex.value.roomId, dragVertex.value.vtxIdx)
+    dragSnapTarget.value = target
+    dragGuides.value = guides
+    fp.updateVertex(dragVertex.value.roomId, dragVertex.value.vtxIdx, pt)
     return
   }
   if (dragOpening.value) {
@@ -169,8 +242,13 @@ function onSvgMove(e: PointerEvent) {
     return
   }
   if (dragRoomsState.value) {
-    const dx = wx - dragRoomsState.value.startWorld[0]
-    const dz = wz - dragRoomsState.value.startWorld[1]
+    const snapped = snapRoomDrag(
+      wx - dragRoomsState.value.startWorld[0],
+      wz - dragRoomsState.value.startWorld[1],
+      dragRoomsState.value.roomSnapshots,
+    )
+    const { dx, dz } = snapped
+    dragSnapTarget.value = snapped.target
     for (const roomSnap of dragRoomsState.value.roomSnapshots) {
       const room = fp.rooms.find(r => r.id === roomSnap.id)
       if (!room) continue
@@ -194,6 +272,8 @@ function onSvgMove(e: PointerEvent) {
 }
 
 function onSvgUp() {
+  dragSnapTarget.value = null
+  dragGuides.value = null
   dragVertex.value = null
   dragOpening.value = null
   panStart.value = null
@@ -1069,6 +1149,32 @@ function roomStroke(id: string) {
             stroke-dasharray="0.15 0.08"
             pointer-events="none"
           />
+          <!-- Drag snapping: ring on the snapped point, dashed guides for alignment -->
+          <g pointer-events="none">
+            <circle
+              v-if="dragSnapTarget"
+              :cx="dragSnapTarget[0]" :cy="dragSnapTarget[1]"
+              r="0.3"
+              fill="rgba(94,234,212,0.15)"
+              stroke="#5eead4"
+              stroke-width="0.06"
+            />
+            <template v-if="dragGuides && dragVertex">
+              <line
+                v-if="dragGuides.x"
+                :x1="dragGuides.x[0]" :y1="dragGuides.x[1]"
+                :x2="dragGuides.x[0]" :y2="fp.rooms.find(r => r.id === dragVertex!.roomId)?.vertices[dragVertex!.vtxIdx]?.[1] ?? dragGuides.x[1]"
+                stroke="#5eead4" stroke-width="0.04" stroke-dasharray="0.15 0.1" opacity="0.8"
+              />
+              <line
+                v-if="dragGuides.z"
+                :x1="dragGuides.z[0]" :y1="dragGuides.z[1]"
+                :x2="fp.rooms.find(r => r.id === dragVertex!.roomId)?.vertices[dragVertex!.vtxIdx]?.[0] ?? dragGuides.z[0]" :y2="dragGuides.z[1]"
+                stroke="#5eead4" stroke-width="0.04" stroke-dasharray="0.15 0.1" opacity="0.8"
+              />
+            </template>
+          </g>
+
           <!-- Snap cursor crosshair -->
           <g v-if="mode === 'draw'" pointer-events="none">
             <line :x1="cursorWorld[0] - 0.3" :y1="cursorWorld[1]" :x2="cursorWorld[0] + 0.3" :y2="cursorWorld[1]" stroke="#5eead4" stroke-width="0.04" opacity="0.7"/>

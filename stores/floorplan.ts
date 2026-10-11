@@ -38,6 +38,14 @@ export interface FloorplanOpening {
   height?: number
   /** Windows only: distance from floor to bottom of window in world units. Default 0.34. */
   sill?: number
+  /** Doors only: draw a door leaf in the opening. Off by default (just a gap). */
+  doorLeaf?: boolean
+  /** Doors only: how far the leaf is open, in degrees (0 = closed, up to 180). Default 90. */
+  doorAngle?: number
+  /** Doors only: which end of the opening the hinge is on, along the edge. Default 'start'. */
+  doorHinge?: 'start' | 'end'
+  /** Doors only: swing into this opening's room, or away from it. Default 'in'. */
+  doorSwing?: 'in' | 'out'
 }
 
 export interface FloorplanDerivedWall {
@@ -355,6 +363,95 @@ export const useFloorplanStore = defineStore('floorplan', {
         r.hiddenWalls = next.length ? next : undefined
       }
       r.vertices.splice(index, 1)
+      this.dirty = true
+    },
+    /**
+     * Removes one wall of a room: its two neighbouring walls are extended until
+     * they meet, replacing the wall's two corners with one. When the neighbours
+     * are parallel (a small jog) both corners go and the neighbours join
+     * directly. Openings on the removed wall are deleted; the rest keep their
+     * position in the world.
+     */
+    removeWall(roomId: string, edgeIdx: number) {
+      const r = this.rooms.find((r) => r.id === roomId)
+      if (!r) return
+      const v = r.vertices
+      const n = v.length
+      const i = edgeIdx, j = (i + 1) % n
+      const prev = v[(i - 1 + n) % n], next = v[(j + 1) % n]
+
+      // Where the lines through the neighbouring walls cross.
+      const d1x = v[i][0] - prev[0], d1z = v[i][1] - prev[1]
+      const d2x = next[0] - v[j][0], d2z = next[1] - v[j][1]
+      const den = d1x * d2z - d1z * d2x
+      let meet: [number, number] | null = null
+      if (Math.abs(den) > 1e-6 * Math.hypot(d1x, d1z) * Math.hypot(d2x, d2z)) {
+        const s = ((v[j][0] - prev[0]) * d2z - (v[j][1] - prev[1]) * d2x) / den
+        const p: [number, number] = [prev[0] + d1x * s, prev[1] + d1z * s]
+        // Ignore a crossing far away from the wall (nearly parallel neighbours).
+        const span = Math.max(1, Math.hypot(v[j][0] - v[i][0], v[j][1] - v[i][1]))
+        if (Math.hypot(p[0] - v[i][0], p[1] - v[i][1]) < span * 4) meet = p
+      }
+      if (meet ? n <= 3 : n <= 4) return
+
+      this._push()
+      // Remember where each opening is, to re-attach it after the edges change.
+      const wallPos = new Map<string, [number, number]>()
+      for (const o of this.openings) {
+        if (o.roomId !== roomId) continue
+        const a = v[o.edgeIdx], b = v[(o.edgeIdx + 1) % n]
+        wallPos.set(o.id, [a[0] + (b[0] - a[0]) * o.t, a[1] + (b[1] - a[1]) * o.t])
+      }
+
+      // removed: old vertices that go. startAlias: old edges whose start vertex goes, and the old edge they merge into.
+      const removed = new Set<number>(meet ? [j] : [i, j])
+      const startAlias = new Map<number, number>(meet ? [[j, i]] : [[j, (i - 1 + n) % n]])
+      const newVertIdx = (k: number) => k - [...removed].filter((x) => x < k).length
+      const edgeMap = (k: number): number | null => {
+        if (k === i) return null
+        return newVertIdx(startAlias.get(k) ?? k)
+      }
+
+      const verts = v.map((p, k) => (meet && k === i ? meet : p)).filter((_, k) => !removed.has(k))
+      if (!meet) {
+        // A jog: line the shorter neighbour up with the longer one so the wall comes out straight.
+        const la = Math.hypot(d1x, d1z), lb = Math.hypot(d2x, d2z)
+        const [moveIdx, ox, oz, ux, uz] = la >= lb
+          ? [(j + 1) % n, prev[0], prev[1], d1x / la, d1z / la]
+          : [(i - 1 + n) % n, v[j][0], v[j][1], d2x / lb, d2z / lb]
+        const q = v[moveIdx]
+        const s = (q[0] - ox) * ux + (q[1] - oz) * uz
+        verts[newVertIdx(moveIdx)] = [ox + ux * s, oz + uz * s]
+      }
+      r.vertices = verts
+      const m = verts.length
+
+      // Per-edge settings follow their edge.
+      if (r.wallThicknesses) {
+        const nextT: Record<number, number> = {}
+        for (const [k, val] of Object.entries(r.wallThicknesses)) {
+          const e = edgeMap(Number(k))
+          if (e !== null && nextT[e] === undefined) nextT[e] = val
+        }
+        r.wallThicknesses = Object.keys(nextT).length ? nextT : undefined
+      }
+      if (r.hiddenWalls) {
+        const nextH = [...new Set(r.hiddenWalls.map(edgeMap).filter((e): e is number => e !== null))].sort((a, b) => a - b)
+        r.hiddenWalls = nextH.length ? nextH : undefined
+      }
+
+      this.openings = this.openings.filter((o) => {
+        if (o.roomId !== roomId) return true
+        const e = edgeMap(o.edgeIdx)
+        if (e === null) return false
+        const [px, pz] = wallPos.get(o.id)!
+        const a = verts[e], b = verts[(e + 1) % m]
+        const dx = b[0] - a[0], dz = b[1] - a[1]
+        const lenSq = dx * dx + dz * dz || 1
+        o.edgeIdx = e
+        o.t = Math.max(0, Math.min(1, ((px - a[0]) * dx + (pz - a[1]) * dz) / lenSq))
+        return true
+      })
       this.dirty = true
     },
     updateVertex(roomId: string, index: number, value: [number, number]) {

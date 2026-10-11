@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Icon } from '@iconify/vue'
 import type { FloorplanOpening } from '~/stores/floorplan'
 
 const props = defineProps<{ opening: FloorplanOpening }>()
@@ -39,5 +40,43 @@ const isDoor = computed(() => props.opening.type === 'door')
         @change="(v) => fp.updateOpening(opening.id, { sill: v })"
       />
     </SettingsField>
+
+    <template v-if="isDoor">
+      <div class="col-span-2 flex items-center justify-between gap-3">
+        <div>
+          <div class="text-sm font-medium">Show door</div>
+          <div class="field-hint">Draw the door itself, not just the gap in the wall.</div>
+        </div>
+        <ToggleSwitch :on="!!opening.doorLeaf" label="Show door" @toggle="fp.updateOpening(opening.id, { doorLeaf: !opening.doorLeaf })" />
+      </div>
+
+      <template v-if="opening.doorLeaf">
+        <SettingsField label="Open" hint="0° is closed, 90° wide open against the wall." class="col-span-2">
+          <SettingsNumber
+            label="Open"
+            :value="opening.doorAngle ?? 90"
+            :step="5"
+            :min="0"
+            :max="180"
+            unit="°"
+            @change="(v) => fp.updateOpening(opening.id, { doorAngle: v ?? 90 })"
+          />
+        </SettingsField>
+        <button
+          class="btn-touch gap-2 text-sm"
+          @click="fp.updateOpening(opening.id, { doorHinge: opening.doorHinge === 'end' ? 'start' : 'end' })"
+        >
+          <Icon icon="mdi:flip-horizontal" width="18" height="18" />
+          Flip hinge
+        </button>
+        <button
+          class="btn-touch gap-2 text-sm"
+          @click="fp.updateOpening(opening.id, { doorSwing: opening.doorSwing === 'out' ? 'in' : 'out' })"
+        >
+          <Icon icon="mdi:flip-vertical" width="18" height="18" />
+          Flip swing
+        </button>
+      </template>
+    </template>
   </div>
 </template>

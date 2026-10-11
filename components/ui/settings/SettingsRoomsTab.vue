@@ -35,6 +35,8 @@ function area(room: FloorplanRoom): number {
   return Math.abs(s) / 2
 }
 
+const totalArea = computed(() => fp.rooms.reduce((sum, r) => sum + area(r), 0))
+
 function roomOpenings(roomId: string) {
   return fp.openings.filter((o) => o.roomId === roomId)
 }
@@ -226,6 +228,7 @@ function unhighlight() {
             >
               <Icon :icon="room.hiddenWalls?.includes(i) ? 'mdi:eye-off-outline' : 'mdi:eye-outline'" width="20" height="20" />
             </button>
+            <SettingsDelete v-if="room.vertices.length > 3" :label="`wall ${i + 1}`" @confirm="fp.removeWall(room.id, i)" />
           </div>
         </div>
       </SettingsSection>
@@ -258,5 +261,11 @@ function unhighlight() {
         </div>
       </SettingsSection>
     </SettingsItem>
+
+    <!-- Total floor area -->
+    <div v-if="fp.rooms.length > 1" class="shrink-0 flex items-center justify-between px-3 py-2 mt-1 border-t border-fg/10 text-sm">
+      <span class="text-fg-muted">Total · {{ fp.rooms.length }} rooms</span>
+      <span class="font-semibold tabular-nums">{{ totalArea.toFixed(1) }} m²</span>
+    </div>
   </div>
 </template>

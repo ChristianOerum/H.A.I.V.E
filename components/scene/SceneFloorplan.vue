@@ -768,6 +768,22 @@ interface WindowPiece {
   sillDepth: number
 }
 
+const DOOR_THICK = 0.04
+
+interface DoorPiece {
+  key: string
+  /** Hinge position on the floor. */
+  hx: number; hz: number
+  /** Wall direction; the leaf's local x runs along the wall, local z across it. */
+  rotY: number
+  /** Opening rotation about the hinge, radians. */
+  swing: number
+  /** Leaf centre along local x: +w/2 when hinged at the start of the wall, −w/2 at the end. */
+  leafX: number
+  leafW: number
+  h: number
+}
+
 /** Resolve active openings that lie on the given wall segment (same logic as wallPieces). */
 function activeOpeningsForWall(
   wall: { x1: number; z1: number; x2: number; z2: number },
@@ -798,8 +814,10 @@ function activeOpeningsForWall(
   })
 }
 
-const windowPieces = computed<WindowPiece[]>(() => {
+/** Window glass/sills and door leaves, placed on the actually-built wall span. */
+const openingPieces = computed<{ windows: WindowPiece[]; doors: DoorPiece[] }>(() => {
   const pieces: WindowPiece[] = []
+  const doors: DoorPiece[] = []
 
   // Per-room winding sign (positive shoelace area = inward is the left normal).
   const roomWindSign = (room: FloorplanRoom): number => {
@@ -862,6 +880,37 @@ const windowPieces = computed<WindowPiece[]>(() => {
     const sillDepth = extPos + extNeg + SILL_LEDGE_OVERHANG * 2
 
     for (const op of activeOpeningsForWall(wall, wallNormX, wallNormZ, len)) {
+      if (op.type === 'door') {
+        if (!op.doorLeaf) continue
+        const room = fp.rooms.find(r => r.id === op.roomId)
+        if (!room) continue
+        // The opening's own edge may run opposite to this wall segment.
+        const n = room.vertices.length
+        const a = room.vertices[op.edgeIdx], b = room.vertices[(op.edgeIdx + 1) % n]
+        const edx = b[0] - a[0], edz = b[1] - a[1]
+        const elen = Math.hypot(edx, edz) || 1
+        const reversed = edx * dx + edz * dz < 0
+        const hingeAtStart = (op.doorHinge !== 'end') !== reversed
+        // Which side of the wall is the opening's room: swing 'in' opens into it.
+        const sign = roomWindSign(room)
+        const inSide = ((-edz / elen) * sign * refNx + (edx / elen) * sign * refNz) >= 0 ? 1 : -1
+        const side = op.doorSwing === 'out' ? -inSide : inSide
+        const phi = (Math.max(0, Math.min(180, op.doorAngle ?? 90)) * Math.PI) / 180
+        const cx = wall.x1 + op.t * dx + refNx * centerOff
+        const cz = wall.z1 + op.t * dz + refNz * centerOff
+        const half = op.width / 2
+        doors.push({
+          key: `${op.id}-door`,
+          hx: cx + (hingeAtStart ? -half : half) * wallNormX,
+          hz: cz + (hingeAtStart ? -half : half) * wallNormZ,
+          rotY,
+          swing: hingeAtStart ? -side * phi : side * phi,
+          leafX: hingeAtStart ? half : -half,
+          leafW: Math.max(0.1, op.width - 0.01),
+          h: Math.min(op.height ?? wallH, wallH),
+        })
+        continue
+      }
       if (op.type !== 'window') continue
       const cx = wall.x1 + op.t * dx + refNx * centerOff
       const cz = wall.z1 + op.t * dz + refNz * centerOff
@@ -870,8 +919,10 @@ const windowPieces = computed<WindowPiece[]>(() => {
       pieces.push({ key: `${wall.roomId}-${wall.edgeIdx}-${Math.round(op.t * 1000)}-wp`, cx, cz, width: op.width, rotY, sillY, glassH, sillDepth })
     }
   }
-  return pieces
+  return { windows: pieces, doors }
 })
+const windowPieces = computed(() => openingPieces.value.windows)
+const doorPieces = computed(() => openingPieces.value.doors)
 
 function furnitureColor(f: FloorplanFurniture): string {
   if (fp.editMode && fp.selection?.id === f.id) return HIGHLIGHT
@@ -1141,6 +1192,28 @@ onUnmounted(() => {
         :depth-write="theme.wallOpacityMode === 'solid'"
       />
     </TresMesh>
+
+    <!-- Door leaves, pivoting about their hinge -->
+    <TresGroup
+      v-for="dp in doorPieces"
+      :key="dp.key"
+      :position="[dp.hx, 0, dp.hz]"
+      :rotation="[0, dp.rotY, 0]"
+    >
+      <TresGroup :rotation="[0, dp.swing, 0]">
+        <TresMesh :position="[dp.leafX, dp.h / 2, 0]" :cast-shadow="true" :receive-shadow="true">
+          <TresBoxGeometry :args="[dp.leafW, dp.h, DOOR_THICK]" />
+          <TresMeshStandardMaterial
+            :key="`dm-${theme.wallOpacityMode}`"
+            :color="sceneColors.furniture"
+            :roughness="0.7"
+            :transparent="theme.wallOpacityMode !== 'solid'"
+            :opacity="theme.wallOpacity"
+            :depth-write="theme.wallOpacityMode === 'solid'"
+          />
+        </TresMesh>
+      </TresGroup>
+    </TresGroup>
 
     <!-- Static furniture merged per colour (outside edit mode) -->
     <primitive v-for="(mesh, i) in furnitureBatches" :key="`fb-${i}-${mesh.uuid}`" :object="mesh" />
